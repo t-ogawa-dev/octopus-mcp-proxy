@@ -40,6 +40,7 @@ nav:
       - クイックスタート: QUICKSTART.md
       - セットアップガイド: SETUP.md
       - MCPエンドポイント: MCP_ENDPOINTS.md
+      - 開発ガイド: DEVELOPMENT.md
       - ディレクトリ構造: STRUCTURE.md
       - テストガイド: TESTING.md
       - E2Eテスト: E2E_TESTING.md
@@ -50,6 +51,7 @@ nav:
       - Quick Start: en/QUICKSTART.en.md
       - Setup Guide: en/SETUP.en.md
       - MCP Endpoints: en/MCP_ENDPOINTS.en.md
+      - Development Guide: en/DEVELOPMENT.en.md
       - Directory Structure: en/STRUCTURE.en.md
       - Testing Guide: en/TESTING.en.md
       - E2E Testing: en/E2E_TESTING.en.md
