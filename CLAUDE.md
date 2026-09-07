@@ -1,86 +1,86 @@
-# Claude 開発ガイド
+# Claude Development Guide
 
-このファイルは、Octopus MCP Proxy を変更する AI エージェントと開発者向けの作業ルールです。プロジェクトの構成やテストの詳細は [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) を参照してください。
+This file defines the working rules for AI agents and developers modifying Octopus MCP Proxy. See [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) for project structure and testing details.
 
-## プロジェクト概要
+## Project Overview
 
-- Python 3.10 以上で動作する Flask アプリケーション
-- FastMCP/MCP プロトコルの HTTP・stdio 中継
-- Flask-SQLAlchemy + Alembic によるデータ管理
-- Web 管理画面、REST API、MCP エンドポイントを同じアプリファクトリから提供
-- Docker Compose では `caddy`、`web`、`mcp`、`redis`、`db` を構成
+- Flask application running on Python 3.10 or later
+- HTTP and stdio relay for FastMCP/MCP protocols
+- Data management with Flask-SQLAlchemy and Alembic
+- Admin UI, REST API, and MCP endpoints provided by the same application factory
+- Docker Compose services: `caddy`, `web`, `mcp`, `redis`, and `db`
 
-## 変更前の確認
+## Before Making Changes
 
-1. 変更対象のファイル、シンボル、失敗しているテストまたは再現手順を最初の起点にする。
-2. 近傍の実装、呼び出し元、関連テストだけを読み、動作を決めている層を特定する。
-3. 変更前に、原因について検証可能な仮説と、最も安価な確認方法を1つ決める。
-4. 既存の未コミット変更を確認し、ユーザーの変更を上書き・破棄しない。
+1. Start from the target file, symbol, failing test, or reproduction steps.
+2. Read the nearby implementation, callers, and related tests to identify the layer that controls the behavior.
+3. Form one falsifiable hypothesis and choose the cheapest check that can disprove it.
+4. Check existing uncommitted changes and never overwrite or discard user changes.
 
-## レイヤーと変更先
+## Layers and Ownership
 
-- ルート登録・アプリ初期化: `app/__init__.py`
-- 設定: `app/config/config.py`
-- 認証・管理画面: `app/controllers/auth_controller.py`, `admin_controller.py`
+- Route registration and application initialization: `app/__init__.py`
+- Configuration: `app/config/config.py`
+- Authentication and admin UI: `app/controllers/auth_controller.py`, `admin_controller.py`
 - REST API: `app/controllers/api_controller.py`
-- MCP プロトコル: `app/controllers/mcp_controller.py`, `admin_mcp_controller.py`
-- DB モデル: `app/models/models.py`
-- 中核ロジック: `app/services/`
-- Jinja2 テンプレート: `app/views/templates/`
-- CSS/JavaScript/画像: `app/assets/`
-- DB マイグレーション: `db/migrations/versions/`
-- テスト: `tests/unit/`, `tests/integration/`, `tests/e2e/`
+- MCP protocol: `app/controllers/mcp_controller.py`, `admin_mcp_controller.py`
+- Database models: `app/models/models.py`
+- Core logic: `app/services/`
+- Jinja2 templates: `app/views/templates/`
+- CSS, JavaScript, and images: `app/assets/`
+- Database migrations: `db/migrations/versions/`
+- Tests: `tests/unit/`, `tests/integration/`, `tests/e2e/`
 
-コントローラーに複雑な業務ロジックを追加せず、再利用される処理は `app/services/` に置く。DB スキーマ変更を伴う場合はモデルだけでなく Alembic マイグレーションとテストを更新する。
+Keep complex business logic out of controllers and place reusable logic in `app/services/`. When changing the database schema, update the model, Alembic migration, and tests together.
 
-## コーディング規約
+## Coding Conventions
 
-- 既存の Flask Blueprint、SQLAlchemy ORM、アプリファクトリのパターンを維持する。
-- Python のファイル・関数・変数は `snake_case`、クラスは `PascalCase` を使う。
-- Ruff の設定は `pyproject.toml` を唯一の基準とする。行長の警告を手作業で回避しない。
-- 公開 API、ルート、モデルの既存契約を変更する場合は、関連するテストとドキュメントも更新する。
-- 秘密情報、トークン、実データをソースコード・ログ・スクリーンショットに含めない。
-- 画像や生成物を手作業で編集せず、既存スクリプトで再生成する。
-- 無関係なリファクタリング、依存関係更新、フォーマット変更を混ぜない。
-- コメントはコードから意図を読み取れない複雑な処理にだけ追加する。
+- Preserve the existing Flask Blueprint, SQLAlchemy ORM, and application-factory patterns.
+- Use `snake_case` for Python files, functions, and variables; use `PascalCase` for classes.
+- Treat `pyproject.toml` as the source of truth for Ruff. Do not work around line-length warnings manually.
+- Update related tests and documentation when changing a public API, route, or model contract.
+- Never put secrets, tokens, or real data in source code, logs, or screenshots.
+- Do not edit generated assets manually; regenerate them with existing scripts.
+- Do not mix unrelated refactoring, dependency updates, or formatting changes into a task.
+- Add comments only where the intent cannot be understood from the code.
 
-## 検証コマンド
+## Validation Commands
 
 ```bash
-# 静的チェック・フォーマット確認
+# Static checks and formatting validation
 ./run_check.sh
 
-# 自動修正・フォーマット
+# Automatic fixes and formatting
 ./run_format.sh
 
-# 全テスト（カバレッジも生成）
+# Full test suite with coverage
 ./run_tests.sh
 
-# 対象を絞ったテスト
+# Focused test
 pytest tests/unit/path/to/test_file.py -q
 
-# スクリーンショット再生成（Playwright Chromium が必要）
+# Regenerate screenshots (requires Playwright Chromium)
 python scripts/capture_screenshots.py
 ```
 
-変更後は、まず変更範囲に最も近いテストまたはチェックを実行し、その後必要に応じて全体チェックを行う。テンプレート/CSS/画像を変更した場合は、関連する E2E テストまたはスクリーンショットも確認する。
+After making changes, run the test or check closest to the changed code first, then broaden validation as needed. For template, CSS, or image changes, also run the related E2E tests or review the generated screenshots.
 
-## 起動方法
+## Running the Application
 
 ```bash
-# 推奨: Docker Compose
+# Recommended: Docker Compose
 cp .env.example .env
 docker compose up -d
 
-# ローカルの Flask 開発サーバー
+# Local Flask development server
 source .venv/bin/activate
 python run.py
 ```
 
-本番相当では `FLASK_ENV=production` を使う。`SECRET_KEY`、管理者認証情報、DB 接続先、`ACCELMCP_ADMIN_API_KEY` は必ず環境変数で設定する。デフォルト認証情報はデモ・検証用であり、本番利用しない。
+Use `FLASK_ENV=production` for production-like runs. Set `SECRET_KEY`, admin credentials, the database URL, and `ACCELMCP_ADMIN_API_KEY` through environment variables. Default credentials are for demos and validation only; never use them in production.
 
-## 変更完了時の確認
+## Completion Checklist
 
-- 変更対象とテスト結果を簡潔に報告する。
-- 実行できなかった検証、既存の警告、未解決のリスクを明記する。
-- コミットやブランチ作成は依頼がない限り行わない。
+- Briefly report the changed files and test results.
+- Clearly report skipped validation, existing warnings, and unresolved risks.
+- Do not create commits or branches unless explicitly requested.

@@ -1,30 +1,30 @@
 # Octopus MCP Proxy 開発ルール
 
-このファイルは VS Code / GitHub Copilot 用のプロジェクト指示です。
-詳細な構成、責務、コーディング規約、検証方法は [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md) を参照してください。
+This file contains project instructions for VS Code / GitHub Copilot.
+See [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md) for detailed structure, ownership, coding conventions, and validation guidance.
 
-## 変更前
+## Before Changes
 
-- 変更対象のファイル、シンボル、失敗しているテストまたは再現手順を起点にする。
-- 近傍の実装、呼び出し元、関連テストを確認して動作を決めている層を特定する。
-- 変更前に検証可能な仮説と、最も安価な確認方法を決める。
-- 既存の未コミット変更を確認し、ユーザーの変更を上書き・破棄しない。
+- Start from the target file, symbol, failing test, or reproduction steps.
+- Read nearby implementations, callers, and related tests to identify the controlling layer.
+- Form a falsifiable hypothesis and choose the cheapest check that can disprove it.
+- Check uncommitted changes and never overwrite or discard user changes.
 
-## 実装
+## Implementation
 
-- 既存の Flask Blueprint、SQLAlchemy ORM、アプリファクトリのパターンを維持する。
-- コントローラーに複雑な業務ロジックを追加せず、再利用される処理は `app/services/` に置く。
-- DB スキーマ変更時はモデル、Alembic マイグレーション、関連テストを更新する。
-- 公開 API、ルート、モデルの既存契約を変更する場合は、テストとドキュメントも更新する。
-- 無関係なリファクタリング、依存関係更新、フォーマット変更を混ぜない。
-- 秘密情報、トークン、実データをソースコード・ログ・スクリーンショットに含めない。
-- 手作業で生成物を編集せず、既存スクリプトで再生成する。
+- Preserve the existing Flask Blueprint, SQLAlchemy ORM, and application-factory patterns.
+- Keep complex business logic out of controllers and place reusable logic in `app/services/`.
+- For schema changes, update the model, Alembic migration, and related tests.
+- Update tests and documentation when changing a public API, route, or model contract.
+- Do not mix unrelated refactoring, dependency updates, or formatting changes into a task.
+- Never put secrets, tokens, or real data in source code, logs, or screenshots.
+- Do not edit generated assets manually; regenerate them with existing scripts.
 
-## 編集と検証
+## Editing and Validation
 
-- 手動編集には `apply_patch` を使用し、変更範囲を最小限にする。
-- 編集直後に変更範囲に最も近いテスト、lint、型チェックのいずれかを実行する。
-- Python の品質確認は `./run_check.sh`、全テストは `./run_tests.sh` を使用する。
-- テンプレート、CSS、画像を変更した場合は関連するE2Eテストまたは `python scripts/capture_screenshots.py` を確認する。
-- 実行できなかった検証、既存の警告、未解決のリスクを完了時に明記する。
-- コミットやブランチ作成は依頼がない限り行わない。
+- Use `apply_patch` for manual edits and keep the change focused.
+- Run the nearest relevant test, lint, or type check immediately after editing.
+- Use `./run_check.sh` for Python quality checks and `./run_tests.sh` for the full suite.
+- For template, CSS, or image changes, run related E2E tests or `python scripts/capture_screenshots.py`.
+- Report skipped validation, existing warnings, and unresolved risks at completion.
+- Do not create commits or branches unless explicitly requested.

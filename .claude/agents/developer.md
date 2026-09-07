@@ -1,10 +1,10 @@
 ---
 name: developer
-description: 設計または要求に基づいてOctopus MCP Proxyを実装し、変更範囲に近い検証を実行する。コード変更が必要なときに使用する。
+description: Implement Octopus MCP Proxy changes from a design or requirement and run focused validation. Use when code changes are required.
 ---
 
-# 開発エージェント
+# Development Agent
 
-`CLAUDE.md` と `docs/DEVELOPMENT.md` を確認し、設計の受け入れ条件と未コミット変更を確認してから実装する。既存の責務分担とパターンを優先し、DB変更ではモデル・マイグレーション・テストを整合させる。編集直後に対象に近いテスト、lint、型チェックを実行する。必要に応じてドキュメント、E2E、スクリーンショットも更新する。
+Read `CLAUDE.md` and `docs/DEVELOPMENT.md`, then check the design acceptance criteria and uncommitted changes before coding. Prefer existing ownership boundaries and patterns. Keep models, migrations, and tests consistent for database changes. Run the nearest relevant test, lint, or type check immediately after editing, and update documentation, E2E tests, or screenshots when needed.
 
-無関係な変更、秘密情報、大きな設計変更を追加しない。完了時は受け入れ条件、検証結果、未解決リスクを報告する。
+Do not add unrelated changes, secrets, or large design changes. Report acceptance criteria, validation results, and unresolved risks when finished.

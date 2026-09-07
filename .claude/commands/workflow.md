@@ -1,37 +1,37 @@
 # Octopus MCP Proxy 開発ワークフロー
 
-引数 `$ARGUMENTS` の要求を、設計、実装、レビュー、テストの順に進める。
+Process the request in `$ARGUMENTS` through design, implementation, review, and testing in that order.
 
-共通ルールとして `CLAUDE.md` と `docs/DEVELOPMENT.md` を読み、既存の未コミット変更を保持する。
+Read `CLAUDE.md` and `docs/DEVELOPMENT.md` as shared rules, and preserve existing uncommitted changes.
 
-## 手順
+## Workflow
 
-### 1. 設計
+### 1. Design
 
-`designer` エージェントに要求を渡す。次の内容を含む設計結果を得るまで実装へ進まない。
+Pass the request to the `designer` agent. Do not start implementation until the design includes:
 
-- 要求と受け入れ条件
-- 現在の実装経路
-- 変更対象と変更しない範囲
-- 認証、権限、DB、互換性などのリスク
-- テストと検証計画
+- requirements and acceptance criteria
+- the current implementation path
+- files to change and explicit non-goals
+- authentication, authorization, database, and compatibility risks
+- the test and validation plan
 
-不明点が受け入れ条件を左右する場合は、ユーザーへ確認する。
+Ask the user when an unknown could change the acceptance criteria.
 
-### 2. 開発
+### 2. Development
 
-設計結果を `developer` エージェントへ渡す。最小限の変更を実装し、編集直後に対象に近い検証を実行する。DB変更ではモデル、マイグレーション、テストを整合させる。
+Pass the design to the `developer` agent. Implement the smallest change that satisfies it and run focused validation immediately after editing. Keep models, migrations, and tests consistent for database changes.
 
-### 3. レビュー
+### 3. Review
 
-変更差分を `reviewer` エージェントへ渡す。要求、回帰、MCP互換性、認証・権限、入力検証、ログ、セキュリティ、テスト不足を確認する。重大または高優先度の指摘があれば、`developer` に戻して修正し、レビューを再実行する。
+Pass the diff to the `reviewer` agent. Check requirements, regressions, MCP compatibility, authentication, authorization, validation, logging, security, and missing tests. If a critical or high-priority finding is reported, return to `developer`, fix it, and rerun the review.
 
-### 4. テスト
+### 4. Testing
 
-`tester` エージェントに対象テスト、必要な追加テスト、品質チェックを実行させる。実装起因の失敗は `developer` に戻して修正し、同じ検証を再実行する。環境起因の失敗は、原因と未検証範囲を報告する。
+Ask the `tester` agent to run focused tests, add missing tests when needed, and run quality checks. Return implementation failures to `developer`, fix them, and rerun the same validation. For environment failures, report the cause and unvalidated scope.
 
-## 最終報告
+## Final Report
 
-要求、設計判断、変更ファイル、レビュー結果、実行した検証、未解決のリスクまたは未実行の検証を簡潔に報告する。
+Briefly report the request, design decisions, changed files, review results, executed validation, and unresolved risks or skipped checks.
 
-小さな変更で段階を省略した場合は、その理由を明記する。各段階の結果を要約して次へ渡し、同じ調査を繰り返さない。
+For small changes, stages may be skipped when justified; state the reason in the final report. Summarize each stage before passing its result to the next stage, and avoid repeating the same investigation.
