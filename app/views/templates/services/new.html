@@ -41,11 +41,11 @@
             <label data-i18n="app_type_label">アプリタイプ *</label>
             <div style="display: flex; gap: 20px; margin-top: 8px;">
                 <label style="display: flex; align-items: center; cursor: pointer;">
-                    <input type="radio" name="service_type" value="api" checked onchange="toggleServiceType()">
+                    <input type="radio" name="service_type" value="api" checked data-action="service-type">
                     <span style="margin-left: 8px;" data-i18n="app_type_api">API (手動登録)</span>
                 </label>
                 <label style="display: flex; align-items: center; cursor: pointer;">
-                    <input type="radio" name="service_type" value="mcp" onchange="toggleServiceType()">
+                    <input type="radio" name="service_type" value="mcp" data-action="service-type">
                     <span style="margin-left: 8px;" data-i18n="app_type_mcp">MCP (自動検出)</span>
                 </label>
             </div>
@@ -56,11 +56,11 @@
                 <label data-i18n="app_mcp_transport_label">MCPトランスポート *</label>
                 <div style="display: flex; gap: 20px; margin-top: 8px;">
                     <label style="display: flex; align-items: center; cursor: pointer;">
-                        <input type="radio" name="mcp_transport" value="http" checked onchange="toggleMcpTransport()">
+                        <input type="radio" name="mcp_transport" value="http" checked data-action="mcp-transport">
                         <span style="margin-left: 8px;" data-i18n="app_transport_http">HTTP (SSE/Streamable)</span>
                     </label>
                     <label style="display: flex; align-items: center; cursor: pointer;">
-                        <input type="radio" name="mcp_transport" value="stdio" onchange="toggleMcpTransport()">
+                        <input type="radio" name="mcp_transport" value="stdio" data-action="mcp-transport">
                         <span style="margin-left: 8px;" data-i18n="app_transport_stdio">stdio (ローカルプロセス)</span>
                     </label>
                 </div>
@@ -74,7 +74,7 @@
                             <input type="url" id="mcp_url" name="mcp_url" placeholder="http://localhost:3000/sse">
                             <small id="mcp-url-hint" data-i18n="app_mcp_url_hint">MCPサーバーのSSEエンドポイントURLを入力してください</small>
                         </div>
-                        <button type="button" id="test-connection-btn" onclick="testConnection()" class="btn btn-secondary" data-i18n="app_test_connection">接続テスト</button>
+                        <button type="button" id="test-connection-btn" data-action="test-connection" class="btn btn-secondary" data-i18n="app_test_connection">接続テスト</button>
                     </div>
                     <div id="connection-test-result" style="display: none; margin-top: 10px;"></div>
                 </div>
@@ -106,7 +106,7 @@
                         </span>
                     </label>
                     <div id="env-container"></div>
-                    <button type="button" onclick="addEnvRow()" class="btn btn-sm btn-secondary" style="margin-top: 10px;" data-i18n="button_add_env">+ 環境変数を追加</button>
+                    <button type="button" data-action="add-env" class="btn btn-sm btn-secondary" style="margin-top: 10px;" data-i18n="button_add_env">+ 環境変数を追加</button>
                     <small data-i18n="app_stdio_env_hint">MCPプロセスに渡す環境変数（値にVariablesが使用可能）</small>
                 </div>
                 
@@ -117,7 +117,7 @@
                 </div>
                 
                 <div style="display: flex; gap: 10px; margin-top: 10px;">
-                    <button type="button" id="test-stdio-btn" onclick="testStdioConnection()" class="btn btn-secondary" data-i18n="app_test_connection">接続テスト</button>
+                    <button type="button" id="test-stdio-btn" data-action="test-stdio" class="btn btn-secondary" data-i18n="app_test_connection">接続テスト</button>
                 </div>
                 <div id="stdio-test-result" style="display: none; margin-top: 10px;"></div>
             </div>
@@ -132,7 +132,7 @@
                     </span>
                 </label>
                 <div id="headers-container"></div>
-                <button type="button" onclick="addHeaderRow()" class="btn btn-sm btn-secondary" style="margin-top: 10px;" data-i18n="button_add_header">+ ヘッダーを追加</button>
+                <button type="button" data-action="add-header" class="btn btn-sm btn-secondary" style="margin-top: 10px;" data-i18n="button_add_header">+ ヘッダーを追加</button>
                 <small data-i18n="app_common_headers_hint">全てのCapabilityで使用される共通ヘッダー</small>
             </div>
         </div>

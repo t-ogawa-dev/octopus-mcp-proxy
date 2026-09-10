@@ -1,18 +1,16 @@
 // services/detail.js - Service Detail Page
 const pathParts = window.location.pathname.split('/');
-const mcpServiceId = parseInt(pathParts[2]);
-const serviceId = parseInt(pathParts[4]);
+const mcpServiceId = Number.parseInt(pathParts[2], 10);
+const serviceId = Number.parseInt(pathParts[4], 10);
 
 async function loadService() {
-    const response = await fetch(`/api/apps/${serviceId}`);
-    const service = await response.json();
+    const service = await AppApi.request(`/api/apps/${serviceId}`);
     
     const isMcpType = service.service_type === 'mcp';
     
     // Update breadcrumb with MCP service name and app name
     try {
-        const mcpServiceResponse = await fetch(`/api/mcp-services/${mcpServiceId}`);
-        const mcpService = await mcpServiceResponse.json();
+        const mcpService = await AppApi.request(`/api/mcp-services/${mcpServiceId}`);
         document.getElementById('mcp-service-link').textContent = mcpService.name;
     } catch (e) {
         console.error('Failed to fetch MCP service info:', e);
@@ -31,15 +29,15 @@ async function loadService() {
         endpointRow = `
                 <tr>
                     <th>${urlLabel}</th>
-                    <td><code>${service.mcp_url}</code></td>
+                    <td><code>${AppDom.escapeHtml(service.mcp_url)}</code></td>
                 </tr>`;
     }
     
     const container = document.getElementById('service-detail');
     container.innerHTML = `
         <div class="detail-section">
-            <h2>${service.name}</h2>
-            ${service.description ? `<p class="text-muted">${service.description}</p>` : ''}
+            <h2>${AppDom.escapeHtml(service.name)}</h2>
+            ${service.description ? `<p class="text-muted">${AppDom.escapeHtml(service.description)}</p>` : ''}
         </div>
         
         <div class="detail-section">
@@ -47,7 +45,7 @@ async function loadService() {
             <table class="detail-table">
                 <tr>
                     <th>${t('app_type_label')}</th>
-                    <td><span class="badge badge-${service.service_type}">${service.service_type.toUpperCase()}</span></td>
+                    <td><span class="badge badge-${AppDom.escapeHtml(service.service_type)}">${AppDom.escapeHtml(service.service_type.toUpperCase())}</span></td>
                 </tr>${endpointRow}
                 <tr>
                     <th>${t('access_control')}</th>
@@ -68,7 +66,7 @@ async function loadService() {
         
         <div class="detail-section">
             <h3>${t('app_common_headers')}</h3>
-            <pre class="code-block">${JSON.stringify(service.common_headers, null, 2)}</pre>
+            <pre class="code-block">${AppDom.escapeHtml(JSON.stringify(service.common_headers, null, 2))}</pre>
         </div>
     `;
     
@@ -88,6 +86,6 @@ async function loadService() {
 // Initialize language and load service detail
 (async () => {
     await initLanguageSwitcher();
-    loadService();
+    await loadService();
 })();
 

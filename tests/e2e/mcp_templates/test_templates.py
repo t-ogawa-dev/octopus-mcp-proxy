@@ -7,15 +7,18 @@ import re
 import pytest
 from playwright.sync_api import Page, expect
 
+from tests.e2e.helpers import admin_credentials, e2e_url
+
 
 @pytest.fixture(autouse=True)
 def login(page: Page):
     """各テスト前に自動ログイン"""
-    page.goto("http://localhost:5000/login")
-    page.fill('input[name="username"]', "admin")
-    page.fill('input[name="password"]', "admin123")
+    username, password = admin_credentials()
+    page.goto(e2e_url("/login"))
+    page.fill('input[name="username"]', username)
+    page.fill('input[name="password"]', password)
     page.click('button[type="submit"]')
-    page.wait_for_url("http://localhost:5000/")
+    page.wait_for_url(e2e_url("/dashboard"))
 
 
 class TestTemplateListPage:
@@ -23,13 +26,13 @@ class TestTemplateListPage:
 
     def test_template_list_loads(self, page: Page):
         """テンプレート一覧ページが読み込まれる"""
-        page.goto("http://localhost:5000/templates")
+        page.goto(e2e_url("/mcp-templates"))
 
-        expect(page).to_have_url("http://localhost:5000/templates")
+        expect(page).to_have_url(e2e_url("/mcp-templates"))
 
     def test_switch_to_custom_tab(self, page: Page):
         """カスタムタブに切り替えられる"""
-        page.goto("http://localhost:5000/templates")
+        page.goto(e2e_url("/mcp-templates"))
 
         # Click custom tab
         if page.locator('button:has-text("カスタム")').count() > 0:
@@ -38,7 +41,7 @@ class TestTemplateListPage:
 
     def test_switch_to_builtin_tab(self, page: Page):
         """WebServiceタブに切り替えられる"""
-        page.goto("http://localhost:5000/templates")
+        page.goto(e2e_url("/mcp-templates"))
 
         # Click builtin tab
         if page.locator('button:has-text("WebService")').count() > 0:
@@ -47,16 +50,16 @@ class TestTemplateListPage:
 
     def test_navigate_to_new_template(self, page: Page):
         """新規テンプレート作成画面に遷移できる"""
-        page.goto("http://localhost:5000/templates")
+        page.goto(e2e_url("/mcp-templates"))
 
         # Switch to custom tab first
         if page.locator('button:has-text("カスタム")').count() > 0:
             page.click('button:has-text("カスタム")')
 
         # Click new template button
-        if page.locator('a[href="/templates/new"]').count() > 0:
-            page.click('a[href="/templates/new"]')
-            expect(page).to_have_url("http://localhost:5000/templates/new")
+        if page.locator('a[href="/mcp-templates/new"]').count() > 0:
+            page.click('a[href="/mcp-templates/new"]')
+            expect(page).to_have_url(e2e_url("/mcp-templates/new"))
 
 
 class TestTemplateNewPage:
@@ -64,14 +67,14 @@ class TestTemplateNewPage:
 
     def test_new_template_page_loads(self, page: Page):
         """新規テンプレート作成ページが読み込まれる"""
-        page.goto("http://localhost:5000/templates/new")
+        page.goto(e2e_url("/mcp-templates/new"))
 
-        expect(page).to_have_url("http://localhost:5000/templates/new")
+        expect(page).to_have_url(e2e_url("/mcp-templates/new"))
         expect(page.locator('input[name="name"]')).to_be_visible()
 
     def test_create_custom_template(self, page: Page):
         """カスタムテンプレートを作成できる"""
-        page.goto("http://localhost:5000/templates/new")
+        page.goto(e2e_url("/mcp-templates/new"))
 
         # Fill template form
         page.fill('input[name="name"]', f"E2E Test Template {page.context.browser.version[:5]}")
@@ -83,7 +86,7 @@ class TestTemplateNewPage:
         page.click('button[type="submit"]')
 
         # Should redirect to template list or detail
-        page.wait_for_url(re.compile("/templates"))
+        page.wait_for_url(re.compile("/mcp-templates"))
 
 
 class TestTemplateDetailPage:
@@ -91,16 +94,16 @@ class TestTemplateDetailPage:
 
     def test_template_detail_loads(self, page: Page):
         """テンプレート詳細ページが読み込まれる"""
-        page.goto("http://localhost:5000/templates")
+        page.goto(e2e_url("/mcp-templates"))
 
         # Click first template
         if page.locator(".template-card:first-of-type, .list-item:first-of-type").count() > 0:
             page.click(".template-card:first-of-type, .list-item:first-of-type")
-            expect(page.url).to_contain("/templates/")
+            assert "/mcp-templates/" in page.url
 
     def test_use_template_modal(self, page: Page):
         """テンプレート使用モーダルが動作する"""
-        page.goto("http://localhost:5000/templates")
+        page.goto(e2e_url("/mcp-templates"))
 
         # Click first template's use button
         if page.locator('button:has-text("使用する")').count() > 0:
@@ -121,7 +124,7 @@ class TestTemplateDetailPage:
 
     def test_export_template(self, page: Page):
         """テンプレートをエクスポートできる（YAML形式）"""
-        page.goto("http://localhost:5000/templates")
+        page.goto(e2e_url("/mcp-templates"))
 
         # Switch to custom tab
         if page.locator('button:has-text("カスタム")').count() > 0:
@@ -140,7 +143,7 @@ class TestTemplateDetailPage:
 
     def test_navigate_to_edit(self, page: Page):
         """編集画面に遷移できる（カスタムテンプレートのみ）"""
-        page.goto("http://localhost:5000/templates")
+        page.goto(e2e_url("/mcp-templates"))
 
         # Switch to custom tab
         if page.locator('button:has-text("カスタム")').count() > 0:
@@ -148,17 +151,17 @@ class TestTemplateDetailPage:
             page.wait_for_timeout(300)
 
             # Click first template
-            if page.locator(".template-card:first-of-type, .list-item:first-of-type").count() > 0:
-                page.click(".template-card:first-of-type, .list-item:first-of-type")
+            if page.locator("#custom-templates .template-card:first-of-type").count() > 0:
+                page.locator("#custom-templates .template-card:first-of-type").click()
 
                 # Click edit button
                 if page.locator('a:has-text("編集")').count() > 0:
                     page.click('a:has-text("編集")')
-                    expect(page.url).to_contain("/edit")
+                    assert "/edit" in page.url
 
     def test_navigate_to_capabilities(self, page: Page):
         """Capabilities画面に遷移できる"""
-        page.goto("http://localhost:5000/templates")
+        page.goto(e2e_url("/mcp-templates"))
 
         # Click first template
         if page.locator(".template-card:first-of-type, .list-item:first-of-type").count() > 0:
@@ -167,7 +170,7 @@ class TestTemplateDetailPage:
             # Click capabilities link
             if page.locator('a:has-text("Capabilities")').count() > 0:
                 page.click('a:has-text("Capabilities")')
-                expect(page.url).to_contain("/capabilities")
+                assert "/capabilities" in page.url
 
 
 class TestTemplateEditPage:
@@ -175,7 +178,7 @@ class TestTemplateEditPage:
 
     def test_edit_template(self, page: Page):
         """カスタムテンプレートを編集できる"""
-        page.goto("http://localhost:5000/templates")
+        page.goto(e2e_url("/mcp-templates"))
 
         # Switch to custom tab
         if page.locator('button:has-text("カスタム")').count() > 0:
@@ -183,8 +186,8 @@ class TestTemplateEditPage:
             page.wait_for_timeout(300)
 
             # Navigate to first template edit page
-            if page.locator(".template-card:first-of-type, .list-item:first-of-type").count() > 0:
-                page.click(".template-card:first-of-type, .list-item:first-of-type")
+            if page.locator("#custom-templates .template-card:first-of-type").count() > 0:
+                page.locator("#custom-templates .template-card:first-of-type").click()
 
                 if page.locator('a:has-text("編集")').count() > 0:
                     page.click('a:has-text("編集")')
@@ -199,7 +202,7 @@ class TestTemplateEditPage:
                         page.click('button[type="submit"]')
 
                         # Verify changes saved
-                        page.wait_for_url(re.compile("/templates"))
+                        page.wait_for_url(re.compile("/mcp-templates"))
 
 
 class TestTemplateCapabilitiesPage:
@@ -207,13 +210,13 @@ class TestTemplateCapabilitiesPage:
 
     def test_template_capabilities_loads(self, page: Page):
         """テンプレートCapabilitiesページが読み込まれる"""
-        page.goto("http://localhost:5000/templates")
+        page.goto(e2e_url("/mcp-templates"))
 
         # Click first template
-        if page.locator(".template-card:first-of-type, .list-item:first-of-type").count() > 0:
-            page.click(".template-card:first-of-type, .list-item:first-of-type")
+        if page.locator("#api-templates .template-card:first-of-type").count() > 0:
+            page.locator("#api-templates .template-card:first-of-type").click()
 
             # Navigate to capabilities
             if page.locator('a:has-text("Capabilities")').count() > 0:
                 page.click('a:has-text("Capabilities")')
-                expect(page.url).to_contain("/capabilities")
+                assert "/capabilities" in page.url

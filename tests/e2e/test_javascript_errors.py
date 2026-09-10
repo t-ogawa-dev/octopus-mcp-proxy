@@ -128,7 +128,7 @@ class TestJavaScriptErrors:
 
     def test_admin_settings_no_js_errors(self, authenticated_page, page: Page):
         """管理者設定ページでJSエラーがないことを確認"""
-        page.goto("/admin/settings")
+        page.goto("/connection-logs/settings")
         page.wait_for_load_state("networkidle")
         page.wait_for_timeout(1000)
 

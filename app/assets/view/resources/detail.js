@@ -5,8 +5,7 @@
 let currentResource = null;
 
 async function loadResource() {
-    const response = await fetch(`/api/resources/${resourceId}`);
-    currentResource = await response.json();
+    currentResource = await AppApi.request(`/api/resources/${resourceId}`);
     
     // パンくずリスト更新
     document.getElementById('resource-name-breadcrumb').textContent = currentResource.name;
@@ -19,7 +18,7 @@ async function loadResource() {
         const capabilitiesList = currentResource.referencing_capabilities.map(cap => `
             <div style="padding: 12px; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
                 <div>
-                    <strong>${cap.name}</strong>
+                    <strong>${AppDom.escapeHtml(cap.name)}</strong>
                     <span class="text-muted" style="margin-left: 8px; font-size: 0.875rem;">(Capability ID: ${cap.id})</span>
                 </div>
                 <a href="/capabilities/${cap.id}" class="btn btn-sm btn-secondary">${t('button_view_detail')}</a>
@@ -46,12 +45,12 @@ async function loadResource() {
         <div class="page-title">
             <div class="page-header-responsive">
                 <div class="page-header-text">
-                    <h2>${currentResource.name}</h2>
-                    <p>${currentResource.description || t('resource_detail_desc')}</p>
+                        <h2>${AppDom.escapeHtml(currentResource.name)}</h2>
+                    <p>${AppDom.escapeHtml(currentResource.description || t('resource_detail_desc'))}</p>
                 </div>
                 <div class="page-header-actions">
                     <a href="/resources/${currentResource.id}/edit" class="btn btn-primary">${t('button_edit')}</a>
-                    <button onclick="deleteResource()" class="btn btn-danger" ${currentResource.usage_count > 0 ? 'disabled title="このResourceは使用中のため削除できません"' : ''}>${t('button_delete')}</button>
+                    <button type="button" data-action="delete" class="btn btn-danger" ${currentResource.usage_count > 0 ? 'disabled title="このResourceは使用中のため削除できません"' : ''}>${t('button_delete')}</button>
                 </div>
             </div>
         </div>
@@ -61,15 +60,15 @@ async function loadResource() {
             <table class="detail-table">
                 <tr>
                     <th>${t('resource_id_label')}</th>
-                    <td><code style="font-size: 0.9em;">${currentResource.resource_id}</code></td>
+                        <td><code style="font-size: 0.9em;">${AppDom.escapeHtml(currentResource.resource_id)}</code></td>
                 </tr>
                 <tr>
                     <th>${t('resource_uri_label')}</th>
-                    <td><code style="font-size: 0.9em; word-break: break-all;">${currentResource.uri}</code></td>
+                        <td><code style="font-size: 0.9em; word-break: break-all;">${AppDom.escapeHtml(currentResource.uri)}</code></td>
                 </tr>
                 <tr>
                     <th>${t('resource_mime_type_label')}</th>
-                    <td><span class="badge badge-mime">${currentResource.mime_type}</span></td>
+                        <td><span class="badge badge-mime">${AppDom.escapeHtml(currentResource.mime_type)}</span></td>
                 </tr>
                 <tr>
                     <th>${t('status')}</th>
@@ -99,28 +98,16 @@ async function loadResource() {
     `;
 }
 
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
 async function deleteResource() {
     const confirmed = await modal.confirmDelete(t('resource_delete_confirm'));
     if (!confirmed) return;
     
     try {
-        const response = await fetch(`/api/resources/${resourceId}`, {
+        await AppApi.request(`/api/resources/${resourceId}`, {
             method: 'DELETE'
         });
-        
-        if (response.ok) {
-            await modal.success(t('resource_deleted_success'));
-            window.location.href = '/resources';
-        } else {
-            const error = await response.json();
-            await modal.error(t('common_error') + ': ' + (error.error || t('error_unknown')));
-        }
+        await modal.success(t('resource_deleted_success'));
+        window.location.href = '/resources';
     } catch (e) {
         await modal.error(t('common_error') + ': ' + e.message);
     }
@@ -129,5 +116,9 @@ async function deleteResource() {
 // Initialize
 (async () => {
     await initLanguageSwitcher();
-    loadResource();
+    document.addEventListener('click', (event) => {
+        const deleteButton = event.target.closest('[data-action="delete"]');
+        if (deleteButton && !deleteButton.disabled) deleteResource();
+    });
+    await loadResource();
 })();

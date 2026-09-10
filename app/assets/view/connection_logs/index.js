@@ -12,10 +12,7 @@ async function loadServicesList() {
     const container = document.getElementById('services-list');
     
     try {
-        const response = await fetch('/api/connection-logs/by-service');
-        if (!response.ok) throw new Error('Failed to load services');
-        
-        const services = await response.json();
+        const services = await AppApi.request('/api/connection-logs/by-service');
         
         // Filter out orphan logs for main list, show only registered services
         const registeredServices = services.filter(item => item.mcp_service !== null);
@@ -40,11 +37,11 @@ async function loadServicesList() {
             const lastLogAt = item.last_log_at ? formatDateTime(item.last_log_at) : window.t('log_no_access_yet');
             
             return `
-                <div class="service-log-card" onclick="navigateToLogs(${service.id})">
+                <div class="service-log-card" data-service-id="${service.id}">
                     <div class="service-info">
-                        <div class="service-name">${escapeHtml(service.name)}</div>
+                        <div class="service-name">${AppDom.escapeHtml(service.name)}</div>
                         <div class="service-meta">
-                            <span>${window.t('log_identifier')}: ${escapeHtml(service.identifier)}</span>
+                            <span>${window.t('log_identifier')}: ${AppDom.escapeHtml(service.identifier)}</span>
                             <span>${window.t('log_last_access')}: ${lastLogAt}</span>
                         </div>
                     </div>
@@ -58,7 +55,7 @@ async function loadServicesList() {
         // Add orphan logs card if exists
         if (orphanLogs && orphanLogs.log_count > 0) {
             html += `
-                <div class="service-log-card orphan-card" onclick="navigateToLogs(null)">
+                <div class="service-log-card orphan-card" data-service-id="">
                     <div class="service-info">
                         <div class="service-name">${window.t('log_orphan_logs')}</div>
                         <div class="service-meta">
@@ -74,6 +71,10 @@ async function loadServicesList() {
         
         container.innerHTML = html;
         
+        container.addEventListener('click', (event) => {
+            const card = event.target.closest('[data-service-id]');
+            if (card) navigateToLogs(card.dataset.serviceId || null);
+        });
     } catch (error) {
         console.error('Failed to load services:', error);
         container.innerHTML = `
@@ -97,11 +98,4 @@ function formatDateTime(isoString) {
     const date = new Date(isoString);
     const lang = document.documentElement.lang || 'ja';
     return date.toLocaleString(lang === 'ja' ? 'ja-JP' : 'en-US');
-}
-
-function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
 }

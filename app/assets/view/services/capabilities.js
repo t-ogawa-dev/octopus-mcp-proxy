@@ -1,7 +1,7 @@
 // services/capabilities.js - Service Capabilities List
 const pathParts = window.location.pathname.split('/');
-const mcpServiceId = parseInt(pathParts[2]);
-const serviceId = parseInt(pathParts[4]);
+const mcpServiceId = Number.parseInt(pathParts[2], 10);
+const serviceId = Number.parseInt(pathParts[4], 10);
 let isMcpType = false;
 let baseUrl = '';
 
@@ -66,11 +66,11 @@ async function loadCapabilities() {
             </div>
             <div class="list-item-actions">
                 <label class="toggle-switch">
-                    <input type="checkbox" ${cap.is_enabled ? 'checked' : ''} onchange="toggleCapability(${cap.id})">
+                    <input type="checkbox" data-action="toggle-capability" data-capability-id="${cap.id}" ${cap.is_enabled ? 'checked' : ''}>
                     <span class="toggle-slider"></span>
                 </label>
                 <a href="/capabilities/${cap.id}/edit" class="btn btn-sm btn-secondary">${t('button_edit')}</a>
-                ${!isMcpType ? `<button onclick="deleteCapability(${cap.id})" class="btn btn-sm btn-danger">${t('button_delete')}</button>` : ''}
+                ${!isMcpType ? `<button type="button" data-action="delete-capability" data-capability-id="${cap.id}" class="btn btn-sm btn-danger">${t('button_delete')}</button>` : ''}
             </div>
         </div>
     `;
@@ -84,16 +84,10 @@ async function loadCapabilities() {
 
 async function toggleCapability(id) {
     try {
-        const response = await fetch(`/api/capabilities/${id}/toggle`, {
+        await AppApi.request(`/api/capabilities/${id}/toggle`, {
             method: 'POST'
         });
-        
-        if (response.ok) {
-            loadCapabilities();
-        } else {
-            const error = await response.json();
-            await modal.error(t('common_error') + ': ' + (error.error || t('error_unknown')));
-        }
+        await loadCapabilities();
     } catch (e) {
         await modal.error(t('common_error') + ': ' + e.message);
     }
@@ -103,13 +97,27 @@ async function deleteCapability(id) {
     const confirmed = await modal.confirmDelete(t('capability_delete_confirm'));
     if (!confirmed) return;
     
-    await fetch(`/api/capabilities/${id}`, { method: 'DELETE' });
-    loadCapabilities();
+    try {
+        await AppApi.request(`/api/capabilities/${id}`, { method: 'DELETE' });
+        await loadCapabilities();
+    } catch (error) {
+        await modal.error(t('common_error') + ': ' + error.message);
+    }
 }
 
 // Initialize language and load capabilities
 (async () => {
     await initLanguageSwitcher();
+    document.addEventListener('click', (event) => {
+        const element = event.target.closest('[data-action]');
+        if (!element) return;
+        const id = element.dataset.capabilityId;
+        if (element.dataset.action === 'delete-capability') deleteCapability(id);
+    });
+    document.addEventListener('change', (event) => {
+        const element = event.target.closest('[data-action="toggle-capability"]');
+        if (element) toggleCapability(element.dataset.capabilityId);
+    });
     
     // Get parent app information to check if it's MCP type and get base URL
     try {

@@ -18,7 +18,7 @@
             <p data-i18n="mcp_service_list_desc">登録されているMCPサービスの管理</p>
         </div>
         <div class="page-header-actions">
-            <button onclick="openImportModal()" class="btn btn-secondary" data-i18n="mcp_service_import_button">インポート</button>
+            <button type="button" data-action="open-import" class="btn btn-secondary" data-i18n="mcp_service_import_button">インポート</button>
             <a href="/mcp-services/new" class="btn btn-primary" data-i18n="mcp_service_new_button">新規MCPサービス登録</a>
         </div>
     </div>
@@ -31,7 +31,7 @@
     <div class="custom-modal-content">
         <div class="custom-modal-header">
             <h3 data-i18n="mcp_service_import_title">MCPサービスをインポート</h3>
-            <span class="modal-close" onclick="closeImportModal()">&times;</span>
+            <button type="button" data-action="close-import" class="modal-close" aria-label="閉じる">&times;</button>
         </div>
         <div class="custom-modal-body">
             <p data-i18n="mcp_service_import_description">エクスポートしたJSONファイルをドラッグ&ドロップまたは選択してください</p>
@@ -41,19 +41,19 @@
                     <div class="drop-zone-icon">📁</div>
                     <p data-i18n="mcp_service_import_drop_hint">ここにJSONファイルをドロップ</p>
                     <p class="drop-zone-or" data-i18n="mcp_service_import_or">または</p>
-                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('file-input').click()" data-i18n="mcp_service_import_select_file">ファイルを選択</button>
+                    <button type="button" data-action="select-file" class="btn btn-secondary" data-i18n="mcp_service_import_select_file">ファイルを選択</button>
                     <input type="file" id="file-input" accept=".yaml,.yml" style="display: none;">
                 </div>
                 <div id="file-info" class="file-info" style="display: none;">
                     <div class="file-info-icon">✓</div>
                     <div class="file-info-name"></div>
-                    <button type="button" class="btn-small btn-secondary" onclick="clearFile()" data-i18n="button_clear">クリア</button>
+                    <button type="button" data-action="clear-file" class="btn-small btn-secondary" data-i18n="button_clear">クリア</button>
                 </div>
             </div>
         </div>
         <div class="custom-modal-footer">
-            <button class="btn btn-secondary" onclick="closeImportModal()" data-i18n="button_cancel">キャンセル</button>
-            <button class="btn btn-primary" onclick="confirmImport()" id="import-btn" disabled data-i18n="mcp_service_import_button">インポート</button>
+            <button type="button" data-action="close-import" class="btn btn-secondary" data-i18n="button_cancel">キャンセル</button>
+            <button type="button" data-action="confirm-import" class="btn btn-primary" id="import-btn" disabled data-i18n="mcp_service_import_button">インポート</button>
         </div>
     </div>
 </div>

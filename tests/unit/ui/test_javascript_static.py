@@ -263,6 +263,41 @@ class TestJavaScriptFetchCalls:
             print("\nWarning - API calls potentially without status check:\n" + "\n".join(issues))
 
 
+class TestSharedJavaScriptUtilities:
+    """共有JS utilityのロードと利用契約を検証する"""
+
+    @pytest.fixture
+    def project_root(self):
+        return Path(__file__).parent.parent.parent.parent
+
+    def test_shared_utilities_are_loaded_by_base_template(self, project_root):
+        base_template = (project_root / "app" / "views" / "templates" / "base.html").read_text(encoding="utf-8")
+
+        assert "/assets/js/api-client.js" in base_template
+        assert "/assets/js/dom.js" in base_template
+
+    def test_connection_logs_index_uses_shared_escape_helper(self, project_root):
+        source = (project_root / "app" / "assets" / "view" / "connection_logs" / "index.js").read_text(
+            encoding="utf-8"
+        )
+
+        assert "AppDom.escapeHtml" in source
+        assert "escapeHtml(" not in source.replace("AppDom.escapeHtml(", "")
+
+    def test_template_external_links_validate_url_scheme(self, project_root):
+        dom_source = (project_root / "app" / "assets" / "js" / "dom.js").read_text(encoding="utf-8")
+        template_detail = (project_root / "app" / "assets" / "view" / "templates" / "detail.js").read_text(
+            encoding="utf-8"
+        )
+        service_new = (project_root / "app" / "assets" / "view" / "services" / "new.js").read_text(
+            encoding="utf-8"
+        )
+
+        assert "safeHttpUrl" in dom_source
+        assert "safeHttpUrl" in template_detail
+        assert "safeHttpUrl" in service_new
+
+
 class TestJavaScriptConsoleLog:
     """本番コードにconsole.logが残っていないかチェック（デバッグ用を除く）"""
 

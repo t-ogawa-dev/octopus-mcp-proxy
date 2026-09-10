@@ -16,8 +16,7 @@ function toggleAccordion() {
 }
 
 async function loadResources() {
-    const response = await fetch('/api/resources');
-    const resources = await response.json();
+    const resources = await AppApi.request('/api/resources');
     
     const container = document.getElementById('resources-list');
     
@@ -41,24 +40,24 @@ async function loadResources() {
         const isInUse = usageCount > 0;
         
         return `
-        <div class="list-item ${!resource.is_enabled ? 'disabled' : ''}">
+        <div class="list-item ${!resource.is_enabled ? 'disabled' : ''}" data-resource-id="${resource.id}">
             <div class="list-item-main">
-                <h3><a href="/resources/${resource.id}">${resource.name}</a></h3>
+                <h3><a href="/resources/${resource.id}">${AppDom.escapeHtml(resource.name)}</a></h3>
                 <div class="list-item-meta">
                     ${statusBadge}
-                    <span class="badge badge-mime">${resource.mime_type}</span>
+                    <span class="badge badge-mime">${AppDom.escapeHtml(resource.mime_type)}</span>
                     ${usageBadge}
                 </div>
-                <p class="text-muted" style="font-size: 12px; margin-top: 5px;">URI: <code>${resource.uri}</code></p>
-                ${resource.description ? `<p class="text-muted">${resource.description}</p>` : ''}
+                <p class="text-muted" style="font-size: 12px; margin-top: 5px;">URI: <code>${AppDom.escapeHtml(resource.uri)}</code></p>
+                ${resource.description ? `<p class="text-muted">${AppDom.escapeHtml(resource.description)}</p>` : ''}
             </div>
             <div class="list-item-actions">
                 <label class="toggle-switch">
-                    <input type="checkbox" ${resource.is_enabled ? 'checked' : ''} onchange="toggleResource(${resource.id})">
+                    <input type="checkbox" data-action="toggle" ${resource.is_enabled ? 'checked' : ''}>
                     <span class="toggle-slider"></span>
                 </label>
                 <a href="/resources/${resource.id}/edit" class="btn btn-sm btn-secondary">${t('button_edit')}</a>
-                <button onclick="${isInUse ? 'return false;' : `deleteResource(${resource.id})`}" class="btn btn-sm btn-danger" ${isInUse ? 'disabled="disabled"' : ''} ${isInUse ? 'title="このResourceは使用中のため削除できません"' : ''}>${t('button_delete')}</button>
+                <button type="button" data-action="delete" class="btn btn-sm btn-danger" ${isInUse ? 'disabled="disabled"' : ''} ${isInUse ? 'title="このResourceは使用中のため削除できません"' : ''}>${t('button_delete')}</button>
             </div>
         </div>
     `;
@@ -67,16 +66,10 @@ async function loadResources() {
 
 async function toggleResource(id) {
     try {
-        const response = await fetch(`/api/resources/${id}/toggle`, {
+        await AppApi.request(`/api/resources/${id}/toggle`, {
             method: 'POST'
         });
-        
-        if (response.ok) {
-            loadResources();
-        } else {
-            const error = await response.json();
-            await modal.error(t('common_error') + ': ' + (error.error || t('error_unknown')));
-        }
+        await loadResources();
     } catch (e) {
         await modal.error(t('common_error') + ': ' + e.message);
     }
@@ -87,13 +80,8 @@ async function deleteResource(id) {
     if (!confirmed) return;
     
     try {
-        const response = await fetch(`/api/resources/${id}`, { method: 'DELETE' });
-        if (response.ok) {
-            loadResources();
-        } else {
-            const error = await response.json();
-            await modal.error(t('common_error') + ': ' + (error.error || t('error_unknown')));
-        }
+        await AppApi.request(`/api/resources/${id}`, { method: 'DELETE' });
+        await loadResources();
     } catch (e) {
         await modal.error(t('common_error') + ': ' + e.message);
     }
@@ -102,5 +90,21 @@ async function deleteResource(id) {
 // 言語初期化完了後にResources一覧を読み込む
 (async () => {
     await initLanguageSwitcher();
-    loadResources();
+    document.addEventListener('click', (event) => {
+        const actionElement = event.target.closest('[data-action]');
+        if (!actionElement) return;
+
+        if (actionElement.dataset.action === 'toggle-accordion') {
+            toggleAccordion();
+            return;
+        }
+
+        const resourceItem = actionElement.closest('[data-resource-id]');
+        if (!resourceItem) return;
+        if (actionElement.dataset.action === 'toggle') toggleResource(resourceItem.dataset.resourceId);
+        if (actionElement.dataset.action === 'delete' && !actionElement.disabled) {
+            deleteResource(resourceItem.dataset.resourceId);
+        }
+    });
+    await loadResources();
 })();

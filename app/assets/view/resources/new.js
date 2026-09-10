@@ -161,20 +161,12 @@ async function handleSubmit(e) {
     };
     
     try {
-        const response = await fetch('/api/resources', {
+        const result = await AppApi.request('/api/resources', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
         });
-        
-        if (response.ok) {
-            const result = await response.json();
-            await modal.success(t('resource_created_success'));
-            window.location.href = `/resources/${result.id}`;
-        } else {
-            const error = await response.json();
-            await modal.error(t('common_error') + ': ' + (error.error || t('error_unknown')));
-        }
+        await modal.success(t('resource_created_success'));
+        window.location.href = `/resources/${result.id}`;
     } catch (e) {
         await modal.error(t('common_error') + ': ' + e.message);
     }
@@ -183,6 +175,23 @@ async function handleSubmit(e) {
 // Initialize
 (async () => {
     await initLanguageSwitcher();
+
+    document.addEventListener('click', (event) => {
+        const action = event.target.closest('[data-action]')?.dataset.action;
+        if (action === 'select-file') document.getElementById('resource_file').click();
+        if (action === 'clear-file') clearResourceFile();
+    });
+    document.addEventListener('change', (event) => {
+        const action = event.target.dataset.action;
+        if (action === 'toggle-input-type') toggleResourceInputType();
+        if (action === 'file-input' && event.target.files[0]) handleResourceFileUpload(event.target.files[0]);
+    });
+    document.addEventListener('input', (event) => {
+        if (event.target.dataset.action === 'resource-content-input') {
+            generateResourcePreview();
+            updateCharCount();
+        }
+    });
     
     document.getElementById('resource-form').addEventListener('submit', handleSubmit);
     

@@ -7,7 +7,7 @@ function addHeader() {
     row.innerHTML = `
         <input type="text" placeholder="Header Name (例: Authorization)" class="header-key">
         <input type="text" placeholder="Header Value (例: Bearer {token})" class="header-value">
-        <button type="button" onclick="this.parentElement.remove()">削除</button>
+        <button type="button" data-action="remove-header">削除</button>
     `;
     container.appendChild(row);
 }
@@ -38,19 +38,11 @@ document.getElementById('template-form').addEventListener('submit', async (e) =>
     };
     
     try {
-        const response = await fetch('/api/mcp-templates', {
+        await AppApi.request('/api/mcp-templates', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(formData)
         });
-        
-        if (response.ok) {
-            const template = await response.json();
-            window.location.href = `/mcp-templates?message=${encodeURIComponent('登録しました')}`;
-        } else {
-            const error = await response.json();
-            await modal.error('登録に失敗しました: ' + (error.error || t('error_unknown')));
-        }
+        window.location.href = `/mcp-templates?message=${encodeURIComponent('登録しました')}`;
     } catch (e) {
         await modal.error('登録に失敗しました: ' + e.message);
     }
@@ -59,6 +51,14 @@ document.getElementById('template-form').addEventListener('submit', async (e) =>
 // Initialize
 (async () => {
     await initLanguageSwitcher();
+    document.addEventListener('click', (event) => {
+        const action = event.target.closest('[data-action]')?.dataset.action;
+        if (action === 'remove-header') {
+            event.target.closest('.header-row')?.remove();
+        }
+        if (action === 'add-header') addHeader();
+        if (action === 'back') window.history.back();
+    });
     // Add one header row by default
     addHeader();
 })();

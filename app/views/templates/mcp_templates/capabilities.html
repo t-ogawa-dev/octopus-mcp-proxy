@@ -23,8 +23,8 @@
         <p id="page-description" data-i18n="capability_management_description">テンプレートのCapabilityを管理します</p>
     </div>
     <div class="header-actions">
-        <button class="btn btn-primary" onclick="window.location.href='/mcp-templates/{{ template_id }}/capabilities/new'" id="new-btn" data-i18n="capability_new_button">新規Capability</button>
-        <button class="btn btn-secondary" onclick="window.history.back()" data-i18n="button_back">戻る</button>
+        <a class="btn btn-primary" href="/mcp-templates/{{ template_id }}/capabilities/new" id="new-btn" data-i18n="capability_new_button">新規Capability</a>
+        <button type="button" class="btn btn-secondary" data-action="back" data-i18n="button_back">戻る</button>
     </div>
 </div>
 

@@ -2,7 +2,7 @@
  * Variable編集画面
  */
 
-const variableId = parseInt(window.location.pathname.split('/')[2]);
+const variableId = Number.parseInt(window.location.pathname.split('/')[2], 10);
 
 function toggleSourceType() {
     const sourceType = document.querySelector('input[name="source_type"]:checked').value;
@@ -44,13 +44,10 @@ async function checkEnvVariable() {
     }
     
     try {
-        const response = await fetch('/api/variables/check-env', {
+        const result = await AppApi.request('/api/variables/check-env', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ env_var_name: envVarName })
         });
-        
-        const result = await response.json();
         
         resultDiv.style.display = 'block';
         if (result.exists) {
@@ -74,8 +71,7 @@ async function checkEnvVariable() {
 }
 
 async function loadVariable() {
-    const response = await fetch(`/api/variables/${variableId}`);
-    const variable = await response.json();
+    const variable = await AppApi.request(`/api/variables/${variableId}`);
     
     document.getElementById('name').value = variable.name;
     document.getElementById('description').value = variable.description || '';
@@ -122,18 +118,11 @@ document.getElementById('variable-form').addEventListener('submit', async (e) =>
     }
     
     try {
-        const response = await fetch(`/api/variables/${variableId}`, {
+        await AppApi.request(`/api/variables/${variableId}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
         });
-        
-        if (response.ok) {
-            window.location.href = '/variables';
-        } else {
-            const error = await response.json();
-            await modal.error(t('variable_update_failed') + ': ' + (error.error || t('error_unknown')));
-        }
+        window.location.href = '/variables';
     } catch (error) {
         await modal.error(t('variable_update_failed') + ': ' + error.message);
     }
@@ -142,5 +131,11 @@ document.getElementById('variable-form').addEventListener('submit', async (e) =>
 // 言語初期化完了後にVariable情報を読み込む
 (async () => {
     await initLanguageSwitcher();
-    loadVariable();
+    document.addEventListener('click', (event) => {
+        if (event.target.closest('[data-action="check-env"]')) checkEnvVariable();
+    });
+    document.addEventListener('change', (event) => {
+        if (event.target.dataset.action === 'toggle-source') toggleSourceType();
+    });
+    await loadVariable();
 })();

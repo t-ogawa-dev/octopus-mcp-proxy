@@ -23,9 +23,9 @@
         <p id="capability-description"></p>
     </div>
     <div class="header-actions">
-        <button class="btn btn-secondary" onclick="window.location.href='/mcp-templates/{{ template_id }}/capabilities/{{ capability_id }}/edit'" id="edit-btn" data-i18n="button_edit">編集</button>
-        <button class="btn btn-danger" onclick="deleteCapability()" id="delete-btn" data-i18n="button_delete">削除</button>
-        <button class="btn btn-secondary" onclick="window.history.back()" data-i18n="button_back">戻る</button>
+        <a class="btn btn-secondary" href="/mcp-templates/{{ template_id }}/capabilities/{{ capability_id }}/edit" id="edit-btn" data-i18n="button_edit">編集</a>
+        <button type="button" class="btn btn-danger" data-action="delete-capability" id="delete-btn" data-i18n="button_delete">削除</button>
+        <button type="button" class="btn btn-secondary" data-action="back" data-i18n="button_back">戻る</button>
     </div>
 </div>
 

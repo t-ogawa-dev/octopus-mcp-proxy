@@ -3,7 +3,7 @@
  * v1.1 - アクセス制御表示追加
  */
 
-const mcpServiceId = parseInt(window.location.pathname.split('/')[2]);
+const mcpServiceId = Number.parseInt(window.location.pathname.split('/')[2], 10);
 
 async function copyEndpoint(btn) {
     const endpoint = document.getElementById('mcp-endpoint').textContent;
@@ -23,15 +23,15 @@ async function copyEndpoint(btn) {
         
         if (successful) {
             // Show success feedback
-            const originalText = btn.innerHTML;
+            const originalText = btn.textContent;
             const copiedText = currentLanguage === 'ja' ? '✓ コピーしました' : '✓ Copied';
-            btn.innerHTML = '<span>' + copiedText + '</span>';
+            btn.textContent = copiedText;
             btn.style.backgroundColor = '#10b981';
             btn.style.borderColor = '#10b981';
             btn.style.color = 'white';
             
             setTimeout(() => {
-                btn.innerHTML = originalText;
+                btn.textContent = originalText;
                 btn.style.backgroundColor = '';
                 btn.style.borderColor = '';
                 btn.style.color = '';
@@ -87,8 +87,7 @@ async function exportMcpService() {
 }
 
 async function loadMcpService() {
-    const response = await fetch(`/api/mcp-services/${mcpServiceId}`);
-    const service = await response.json();
+    const service = await AppApi.request(`/api/mcp-services/${mcpServiceId}`);
     
     // Update breadcrumb with service name
     const breadcrumbCurrent = document.querySelector('.breadcrumb-current');
@@ -151,7 +150,17 @@ async function loadMcpService() {
 
 (async () => {
     await initLanguageSwitcher();
-    loadMcpService();
+    document.addEventListener('click', (event) => {
+        const actionElement = event.target.closest('[data-action]');
+        if (!actionElement) return;
+
+        const action = actionElement.dataset.action;
+        if (action === 'export') exportMcpService();
+        if (action === 'copy-endpoint') copyEndpoint(actionElement);
+        if (action === 'snippet-tab') switchSvcSnippetTab(actionElement.dataset.snippet);
+        if (action === 'copy-snippet') copySvcSnippet(actionElement.dataset.snippet);
+    });
+    await loadMcpService();
 })();
 
 // ---- Client Configuration Snippets ----

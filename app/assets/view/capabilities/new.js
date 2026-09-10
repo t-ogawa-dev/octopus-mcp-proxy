@@ -1,7 +1,7 @@
 // capabilities/new.js - New Capability Registration Page
 const pathParts = window.location.pathname.split('/');
-const mcpServiceId = parseInt(pathParts[2]); // /mcp-services/{id}/apps/{app_id}/capabilities/new
-const serviceId = parseInt(pathParts[4]);
+const mcpServiceId = Number.parseInt(pathParts[2], 10); // /mcp-services/{id}/apps/{app_id}/capabilities/new
+const serviceId = Number.parseInt(pathParts[4], 10);
 let headerIndex = 0;
 let bodyIndex = 0;
 
@@ -34,8 +34,7 @@ function hideError() {
 
 // Load accounts list
 async function loadAccounts() {
-    const response = await fetch('/api/accounts');
-    const accounts = await response.json();
+    const accounts = await AppApi.request('/api/accounts');
     
     const disabledSelect = document.getElementById('disabled-accounts');
     disabledSelect.innerHTML = accounts.map(account => 
@@ -193,7 +192,7 @@ function addHeaderRow(key = '', value = '') {
                style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
         <input type="text" placeholder="${t('form_value_placeholder')}" value="${value}" 
                style="flex: 2; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-        <button type="button" onclick="this.parentElement.remove()" class="btn btn-sm btn-danger">${t('button_delete')}</button>
+        <button type="button" data-action="remove-row" class="btn btn-sm btn-danger">${t('button_delete')}</button>
     `;
     container.appendChild(row);
     headerIndex++;
@@ -210,7 +209,7 @@ function addFixedParamRow(key = '', value = '') {
                style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
         <input type="text" placeholder="Value (or {{VARIABLE}})" value="${value}" 
                style="flex: 2; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-        <button type="button" onclick="this.parentElement.remove()" class="btn btn-sm btn-danger">${t('button_delete')}</button>
+        <button type="button" data-action="remove-row" class="btn btn-sm btn-danger">${t('button_delete')}</button>
     `;
     container.appendChild(row);
 }
@@ -243,7 +242,7 @@ function addLlmParamRow(paramData = null) {
             </div>
             <div>
                 <label style="font-size: 0.85rem; font-weight: 600; color: #333; display: block; margin-bottom: 4px;">型 *</label>
-                <select class="llm-param-type" onchange="toggleEnumField(this)" style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9rem;">
+                <select class="llm-param-type" data-action="toggle-enum" style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9rem;">
                     <option value="string" ${data.type === 'string' ? 'selected' : ''}>string</option>
                     <option value="number" ${data.type === 'number' ? 'selected' : ''}>number</option>
                     <option value="integer" ${data.type === 'integer' ? 'selected' : ''}>integer</option>
@@ -277,7 +276,7 @@ function addLlmParamRow(paramData = null) {
                        style="width: 16px; height: 16px; cursor: pointer;">
                 <span style="font-weight: 600; color: #333;">必須パラメータ</span>
             </label>
-            <button type="button" onclick="this.closest('.llm-param-row').remove()" class="btn btn-sm btn-danger">削除</button>
+            <button type="button" data-action="remove-row" class="btn btn-sm btn-danger">削除</button>
         </div>
     `;
     container.appendChild(row);
@@ -428,7 +427,7 @@ function addLlmParamTreeRow(containerOrParent = null, depth = 0, paramData = nul
     node.style.cssText = `margin-left: ${indentPx}px; margin-bottom: 8px; border-left: ${depth > 0 ? '2px solid #cce5ff' : 'none'}; padding-left: ${depth > 0 ? '10px' : '0'};`;
     
     const isExpandable = data.type === 'object';
-    const expandButton = isExpandable ? `<button type="button" class="tree-expand-btn" onclick="toggleTreeNode('${nodeId}')" style="width: 24px; height: 24px; padding: 0; margin-right: 5px; border: 1px solid #ccc; background: white; cursor: pointer; border-radius: 3px;">▼</button>` : '<span style="display: inline-block; width: 24px;"></span>';
+    const expandButton = isExpandable ? `<button type="button" class="tree-expand-btn" data-action="toggle-tree" data-node-id="${nodeId}" style="width: 24px; height: 24px; padding: 0; margin-right: 5px; border: 1px solid #ccc; background: white; cursor: pointer; border-radius: 3px;">▼</button>` : '<span style="display: inline-block; width: 24px;"></span>';
     
     node.innerHTML = `
         <div style="border: 1px solid #cce5ff; border-radius: 4px; padding: 12px; background: white;">
@@ -442,7 +441,7 @@ function addLlmParamTreeRow(containerOrParent = null, depth = 0, paramData = nul
                     </div>
                     <div>
                         <label style="font-size: 0.75rem; font-weight: 600; color: #333; display: block; margin-bottom: 2px;">型 *</label>
-                        <select class="tree-param-type" onchange="handleTreeTypeChange('${nodeId}')" style="width: 100%; padding: 5px 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 0.85rem;">
+                        <select class="tree-param-type" data-action="tree-type" data-node-id="${nodeId}" style="width: 100%; padding: 5px 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 0.85rem;">
                             <option value="string" ${data.type === 'string' ? 'selected' : ''}>string</option>
                             <option value="number" ${data.type === 'number' ? 'selected' : ''}>number</option>
                             <option value="integer" ${data.type === 'integer' ? 'selected' : ''}>integer</option>
@@ -454,7 +453,7 @@ function addLlmParamTreeRow(containerOrParent = null, depth = 0, paramData = nul
                     </div>
                     <div class="tree-array-items" style="display: ${data.type === 'array' ? 'block' : 'none'};">
                         <label style="font-size: 0.75rem; font-weight: 600; color: #333; display: block; margin-bottom: 2px;">配列要素の型 *</label>
-                        <select class="tree-array-items-type" onchange="handleArrayItemsTypeChange('${nodeId}')" style="width: 100%; padding: 5px 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 0.85rem;">
+                        <select class="tree-array-items-type" data-action="tree-array-type" data-node-id="${nodeId}" style="width: 100%; padding: 5px 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 0.85rem;">
                             <option value="string" ${data.itemsType === 'string' ? 'selected' : ''}>string</option>
                             <option value="number" ${data.itemsType === 'number' ? 'selected' : ''}>number</option>
                             <option value="integer" ${data.itemsType === 'integer' ? 'selected' : ''}>integer</option>
@@ -515,14 +514,14 @@ function addLlmParamTreeRow(containerOrParent = null, depth = 0, paramData = nul
                         <input type="checkbox" class="tree-param-required" ${data.required ? 'checked' : ''} style="width: 14px; height: 14px; margin-bottom: 0;">
                         <span style="color: #333;">必須</span>
                     </label>
-                    <button type="button" onclick="removeTreeNode('${nodeId}')" class="btn btn-sm btn-danger" style="font-size: 0.75rem; padding: 3px 8px;">削除</button>
+                    <button type="button" data-action="remove-tree" data-node-id="${nodeId}" class="btn btn-sm btn-danger" style="font-size: 0.75rem; padding: 3px 8px;">削除</button>
                 </div>
             </div>
             <div class="tree-add-child" style="display: ${isExpandable && (!isFixedParam || depth === 0) ? 'block' : 'none'}; margin-top: 8px;">
-                <button type="button" onclick="addChildToTreeNode('${nodeId}')" class="btn btn-sm btn-primary" style="font-size: 0.8rem; padding: 4px 10px;">+ 子プロパティを追加</button>
+                <button type="button" data-action="add-tree-child" data-node-id="${nodeId}" class="btn btn-sm btn-primary" style="font-size: 0.8rem; padding: 4px 10px;">+ 子プロパティを追加</button>
             </div>
             <div class="tree-add-array-item-property" style="display: ${data.type === 'array' && data.itemsType === 'object' ? 'block' : 'none'}; margin-top: 8px;">
-                <button type="button" onclick="addArrayItemPropertyNode('${nodeId}')" class="btn btn-sm btn-secondary" style="font-size: 0.8rem; padding: 4px 10px;">+ 配列要素のプロパティを定義</button>
+                <button type="button" data-action="add-tree-array-property" data-node-id="${nodeId}" class="btn btn-sm btn-secondary" style="font-size: 0.8rem; padding: 4px 10px;">+ 配列要素のプロパティを定義</button>
             </div>
             <div class="tree-children" style="margin-top: 10px;"></div>
             <div class="tree-array-item-properties" style="margin-top: 10px;"></div>
@@ -1351,6 +1350,8 @@ function generateSampleValue(node) {
     
     // Load existing resources for selection
     await loadExistingResources();
+
+    setupStaticEventListeners();
     
     // Setup drag and drop for resource file upload
     const dropZone = document.getElementById('resource-drop-zone');
@@ -1587,18 +1588,11 @@ function generateSampleValue(node) {
         const accountIds = Array.from(enabledSelect.options).map(opt => parseInt(opt.value));
         data.account_ids = accountIds;
         
-        const response = await fetch(`/api/apps/${serviceId}/capabilities`, {
+        await AppApi.request(`/api/apps/${serviceId}/capabilities`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
         });
-        
-        if (response.ok) {
             window.location.href = `/mcp-services/${mcpServiceId}/apps/${serviceId}/capabilities`;
-        } else {
-            const error = await response.json();
-            showError(t('capability_register_failed') + ': ' + (error.error || t('error_unknown')));
-        }
     });
 })();
 
@@ -1757,8 +1751,7 @@ function toggleResourceSource() {
 let globalResources = [];
 async function loadExistingResources() {
     try {
-        const response = await fetch('/api/resources');
-        globalResources = await response.json();
+        globalResources = await AppApi.request('/api/resources');
         
         const selectElement = document.getElementById('existing_resource_id');
         if (selectElement) {
@@ -1861,6 +1854,51 @@ function clearResourceFile() {
     if (previewDiv) previewDiv.style.display = 'none';
     uploadedResourceContent = null;
     generateResourcePreview();
+}
+
+function setupStaticEventListeners() {
+    document.addEventListener('click', (event) => {
+        const actionElement = event.target.closest('[data-action]');
+        if (!actionElement) return;
+
+        const action = actionElement.dataset.action;
+        if (action === 'remove-row') actionElement.closest('.key-value-row, .llm-param-row')?.remove();
+        if (action === 'toggle-enum') toggleEnumField(actionElement);
+        if (action === 'toggle-tree') toggleTreeNode(actionElement.dataset.nodeId);
+        if (action === 'remove-tree') removeTreeNode(actionElement.dataset.nodeId);
+        if (action === 'add-tree-child') addChildToTreeNode(actionElement.dataset.nodeId);
+        if (action === 'add-tree-array-property') addArrayItemPropertyNode(actionElement.dataset.nodeId);
+        if (action === 'add-header') addHeaderRow();
+        if (action === 'add-fixed-param') addFixedParamRow();
+        if (action === 'add-llm-param') addLlmParamRow();
+        if (action === 'add-fixed-param-post') addFixedParamPostRow(null, 0);
+        if (action === 'add-llm-param-tree') addLlmParamTreeRow(null, 0);
+        if (action === 'move-enabled') moveToEnabled();
+        if (action === 'move-all-enabled') moveAllToEnabled();
+        if (action === 'move-disabled') moveToDisabled();
+        if (action === 'move-all-disabled') moveAllToDisabled();
+        if (action === 'select-resource-file') document.getElementById('resource_file').click();
+        if (action === 'clear-resource-file') clearResourceFile();
+    });
+
+    document.addEventListener('change', (event) => {
+        const action = event.target.dataset.action;
+        if (action === 'toggle-capability-type') toggleCapabilityType();
+        if (action === 'toggle-body-type') toggleBodyType();
+        if (action === 'toggle-resource-source') toggleResourceSource();
+        if (action === 'toggle-resource-input') toggleResourceInputType();
+        if (action === 'load-resource-preview') loadExistingResourcePreview();
+        if (action === 'resource-file-input' && event.target.files[0]) {
+            handleResourceFileUpload(event.target.files[0]);
+        }
+        if (action === 'tree-type') handleTreeTypeChange(event.target.dataset.nodeId);
+        if (action === 'tree-array-type') handleArrayItemsTypeChange(event.target.dataset.nodeId);
+    });
+
+    document.addEventListener('input', (event) => {
+        if (event.target.dataset.action === 'prompt-preview-input') generatePromptPreview();
+        if (event.target.dataset.action === 'resource-preview-input') generateResourcePreview();
+    });
 }
 
 // リソースプレビュー生成

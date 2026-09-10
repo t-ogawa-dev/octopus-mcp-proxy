@@ -32,10 +32,7 @@ async function loadLogDetail() {
     const container = document.getElementById('log-detail');
     
     try {
-        const response = await fetch(`/api/connection-logs/${logId}`);
-        if (!response.ok) throw new Error('Failed to load log');
-        
-        const log = await response.json();
+        const log = await AppApi.request(`/api/connection-logs/${logId}`);
         
         // Update subtitle
         document.getElementById('log-subtitle').textContent = 
@@ -63,7 +60,7 @@ async function loadLogDetail() {
                         </div>
                         <div class="detail-item">
                             <span class="detail-label">${t('log_col_method')}</span>
-                            <span class="method-badge">${escapeHtml(log.mcp_method)}</span>
+                            <span class="method-badge">${AppDom.escapeHtml(log.mcp_method)}</span>
                         </div>
                     </div>
                 </div>
@@ -76,27 +73,27 @@ async function loadLogDetail() {
                     <div class="detail-grid">
                         <div class="detail-item">
                             <span class="detail-label">${t('log_col_account')}</span>
-                            <span class="detail-value">${escapeHtml(log.account_name)}</span>
+                            <span class="detail-value">${AppDom.escapeHtml(log.account_name)}</span>
                         </div>
                         <div class="detail-item">
                             <span class="detail-label">${t('log_detail_access_control')}</span>
-                            <span class="detail-value">${log.access_control || '-'}</span>
+                            <span class="detail-value">${AppDom.escapeHtml(log.access_control || '-')}</span>
                         </div>
                         <div class="detail-item">
                             <span class="detail-label">${t('log_detail_mcp_service')}</span>
-                            <span class="detail-value">${log.mcp_service_name || '-'}</span>
+                            <span class="detail-value">${AppDom.escapeHtml(log.mcp_service_name || '-')}</span>
                         </div>
                         <div class="detail-item">
                             <span class="detail-label">${t('log_detail_app')}</span>
-                            <span class="detail-value">${log.app_name || '-'}</span>
+                            <span class="detail-value">${AppDom.escapeHtml(log.app_name || '-')}</span>
                         </div>
                         <div class="detail-item">
                             <span class="detail-label">${t('log_detail_capability')}</span>
-                            <span class="detail-value">${log.capability_name || '-'}</span>
+                            <span class="detail-value">${AppDom.escapeHtml(log.capability_name || '-')}</span>
                         </div>
                         <div class="detail-item">
                             <span class="detail-label">${t('log_col_tool')}</span>
-                            <span class="detail-value">${log.tool_name || '-'}</span>
+                            <span class="detail-value">${AppDom.escapeHtml(log.tool_name || '-')}</span>
                         </div>
                     </div>
                 </div>
@@ -109,15 +106,15 @@ async function loadLogDetail() {
                     <div class="detail-grid">
                         <div class="detail-item">
                             <span class="detail-label">${t('log_col_ip')}</span>
-                            <span class="detail-value">${log.ip_address || '-'}</span>
+                            <span class="detail-value">${AppDom.escapeHtml(log.ip_address || '-')}</span>
                         </div>
                         <div class="detail-item">
                             <span class="detail-label">${t('log_detail_user_agent')}</span>
-                            <span class="detail-value" style="word-break: break-all;">${escapeHtml(log.user_agent) || '-'}</span>
+                            <span class="detail-value" style="word-break: break-all;">${AppDom.escapeHtml(log.user_agent) || '-'}</span>
                         </div>
                         <div class="detail-item">
                             <span class="detail-label">${t('log_detail_request_id')}</span>
-                            <span class="detail-value">${log.request_id || '-'}</span>
+                            <span class="detail-value">${AppDom.escapeHtml(log.request_id || '-')}</span>
                         </div>
                     </div>
                 </div>
@@ -133,11 +130,11 @@ async function loadLogDetail() {
                     <div class="detail-grid">
                         <div class="detail-item">
                             <span class="detail-label">${t('log_detail_error_code')}</span>
-                            <span class="detail-value error">${log.error_code || '-'}</span>
+                            <span class="detail-value error">${AppDom.escapeHtml(log.error_code || '-')}</span>
                         </div>
                         <div class="detail-item" style="grid-column: span 2;">
                             <span class="detail-label">${t('log_detail_error_message')}</span>
-                            <span class="detail-value error">${escapeHtml(log.error_message) || '-'}</span>
+                            <span class="detail-value error">${AppDom.escapeHtml(log.error_message) || '-'}</span>
                         </div>
                     </div>
                 </div>
@@ -194,12 +191,12 @@ function formatJson(jsonString) {
         return syntaxHighlight(JSON.stringify(obj, null, 2));
     } catch (e) {
         // If not valid JSON, just escape and return
-        return escapeHtml(jsonString);
+        return AppDom.escapeHtml(jsonString);
     }
 }
 
 function syntaxHighlight(json) {
-    json = escapeHtml(json);
+    json = AppDom.escapeHtml(json);
     return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
         let cls = 'number';
         if (/^"/.test(match)) {
@@ -221,11 +218,4 @@ function formatDateTime(isoString) {
     const date = new Date(isoString);
     const lang = document.documentElement.lang || 'ja';
     return date.toLocaleString(lang === 'ja' ? 'ja-JP' : 'en-US');
-}
-
-function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
 }

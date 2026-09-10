@@ -78,7 +78,7 @@
             <a href="/connection-logs/list?mcp_service_id={{ mcp_service_id }}" class="btn btn-secondary">
                 <span data-i18n="connection_log_button">📋 ログ</span>
             </a>
-            <button onclick="exportMcpService()" class="btn btn-secondary" data-i18n="mcp_service_export_button">エクスポート</button>
+            <button type="button" data-action="export" class="btn btn-secondary" data-i18n="mcp_service_export_button">エクスポート</button>
             <a href="/mcp-services/{{ mcp_service_id }}/edit" class="btn btn-secondary" data-i18n="button_edit">編集</a>
         </div>
     </div>
@@ -100,7 +100,7 @@
             <td>
                 <div style="display: flex; align-items: center; gap: 10px;">
                     <code id="mcp-endpoint" style="flex: 1;"></code>
-                    <button onclick="copyEndpoint(this)" class="btn btn-sm btn-secondary" style="white-space: nowrap;">
+                    <button type="button" data-action="copy-endpoint" class="btn btn-sm btn-secondary" style="white-space: nowrap;">
                         <span data-i18n="button_copy">コピー</span>
                     </button>
                 </div>
@@ -123,25 +123,25 @@
 <div class="detail-card" id="svc-snippet-card" style="display:none;">
     <h3 data-i18n="guide_snippets_section">クライアント設定スニペット</h3>
     <div class="snippet-tabs">
-      <div class="snippet-tab active" onclick="switchSvcSnippetTab('claude')" data-i18n="guide_tab_claude">Claude Desktop</div>
-      <div class="snippet-tab" onclick="switchSvcSnippetTab('cursor')" data-i18n="guide_tab_cursor">Cursor</div>
-      <div class="snippet-tab" onclick="switchSvcSnippetTab('vscode')" data-i18n="guide_tab_vscode">VS Code</div>
-      <div class="snippet-tab" onclick="switchSvcSnippetTab('generic')" data-i18n="guide_tab_generic">Generic HTTP</div>
+      <button type="button" class="snippet-tab active" data-action="snippet-tab" data-snippet="claude" data-i18n="guide_tab_claude">Claude Desktop</button>
+      <button type="button" class="snippet-tab" data-action="snippet-tab" data-snippet="cursor" data-i18n="guide_tab_cursor">Cursor</button>
+      <button type="button" class="snippet-tab" data-action="snippet-tab" data-snippet="vscode" data-i18n="guide_tab_vscode">VS Code</button>
+      <button type="button" class="snippet-tab" data-action="snippet-tab" data-snippet="generic" data-i18n="guide_tab_generic">Generic HTTP</button>
     </div>
     <div class="snippet-content active" id="svc-snippet-claude">
-      <button class="btn btn-secondary btn-xs snippet-copy-btn" onclick="copySvcSnippet('svc-snippet-claude')" data-i18n="guide_snippet_copy">コピー</button>
+      <button type="button" class="btn btn-secondary btn-xs snippet-copy-btn" data-action="copy-snippet" data-snippet="svc-snippet-claude" data-i18n="guide_snippet_copy">コピー</button>
       <pre class="snippet-pre" id="svc-snippet-claude-code"></pre>
     </div>
     <div class="snippet-content" id="svc-snippet-cursor">
-      <button class="btn btn-secondary btn-xs snippet-copy-btn" onclick="copySvcSnippet('svc-snippet-cursor')" data-i18n="guide_snippet_copy">コピー</button>
+      <button type="button" class="btn btn-secondary btn-xs snippet-copy-btn" data-action="copy-snippet" data-snippet="svc-snippet-cursor" data-i18n="guide_snippet_copy">コピー</button>
       <pre class="snippet-pre" id="svc-snippet-cursor-code"></pre>
     </div>
     <div class="snippet-content" id="svc-snippet-vscode">
-      <button class="btn btn-secondary btn-xs snippet-copy-btn" onclick="copySvcSnippet('svc-snippet-vscode')" data-i18n="guide_snippet_copy">コピー</button>
+      <button type="button" class="btn btn-secondary btn-xs snippet-copy-btn" data-action="copy-snippet" data-snippet="svc-snippet-vscode" data-i18n="guide_snippet_copy">コピー</button>
       <pre class="snippet-pre" id="svc-snippet-vscode-code"></pre>
     </div>
     <div class="snippet-content" id="svc-snippet-generic">
-      <button class="btn btn-secondary btn-xs snippet-copy-btn" onclick="copySvcSnippet('svc-snippet-generic')" data-i18n="guide_snippet_copy">コピー</button>
+      <button type="button" class="btn btn-secondary btn-xs snippet-copy-btn" data-action="copy-snippet" data-snippet="svc-snippet-generic" data-i18n="guide_snippet_copy">コピー</button>
       <pre class="snippet-pre" id="svc-snippet-generic-code"></pre>
     </div>
 </div>

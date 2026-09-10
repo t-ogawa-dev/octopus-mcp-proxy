@@ -8,11 +8,13 @@ import json
 import pytest
 from playwright.sync_api import Page, expect
 
+from tests.e2e.helpers import e2e_url
+
 
 def test_capabilities_page_loads_without_error(page: Page, authenticated_page):
     """Test that capabilities page loads without 500 error"""
     # Navigate to dashboard
-    page.goto("http://localhost:5000/dashboard")
+    page.goto(e2e_url("/dashboard"))
 
     # Wait for page to load
     page.wait_for_load_state("networkidle")
@@ -36,7 +38,7 @@ def test_create_capability_with_timeout_e2e(page: Page, authenticated_page, crea
     service_id = create_test_service
 
     # Navigate to capabilities page for service
-    page.goto(f"http://localhost:5000/services/{service_id}")
+    page.goto(e2e_url(f"/services/{service_id}"))
     page.wait_for_load_state("networkidle")
 
     # Click "Add Capability" button
@@ -66,7 +68,7 @@ def test_view_capability_details_with_timeout(page: Page, authenticated_page, cr
     service_id, capability_id = create_test_capability
 
     # Navigate to service page
-    page.goto(f"http://localhost:5000/services/{service_id}")
+    page.goto(e2e_url(f"/services/{service_id}"))
     page.wait_for_load_state("networkidle")
 
     # Click on capability to view details
@@ -82,7 +84,7 @@ def test_edit_capability_timeout_e2e(page: Page, authenticated_page, create_test
     service_id, capability_id = create_test_capability
 
     # Navigate to service page
-    page.goto(f"http://localhost:5000/services/{service_id}")
+    page.goto(e2e_url(f"/services/{service_id}"))
     page.wait_for_load_state("networkidle")
 
     # Click edit button for capability

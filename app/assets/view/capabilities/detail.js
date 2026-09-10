@@ -1,12 +1,11 @@
 // capabilities/detail.js - Capability Detail Page
-const capabilityId = parseInt(window.location.pathname.split('/')[2]);
+const capabilityId = Number.parseInt(window.location.pathname.split('/')[2], 10);
 let llmParamsSchema = { properties: {}, required: [] }; // Store LLM params schema for form generation
 let currentCapabilityType = 'tool'; // Store capability type for test/preview logic
 let currentTemplateContent = ''; // Store template content for prompt preview
 
 async function loadCapability() {
-    const response = await fetch(`/api/capabilities/${capabilityId}`);
-    const cap = await response.json();
+    const cap = await AppApi.request(`/api/capabilities/${capabilityId}`);
     
     // Store capability type and template content
     currentCapabilityType = cap.capability_type;
@@ -27,8 +26,7 @@ async function loadCapability() {
         
         // Fetch service name, base URL, and service type for breadcrumb
         try {
-            const serviceResponse = await fetch(`/api/apps/${serviceId}`);
-            const service = await serviceResponse.json();
+            const service = await AppApi.request(`/api/apps/${serviceId}`);
             if (service.mcp_service_name) {
                 document.getElementById('mcp-service-link').textContent = service.mcp_service_name;
             }
@@ -130,18 +128,11 @@ async function loadCapability() {
     
     console.log('Final relayParamsDisplay:', JSON.stringify(relayParamsDisplay, null, 2));
     
-    // Helper function to escape HTML in JSON output
-    function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-    
     const relayParamsJson = Object.keys(relayParamsDisplay).length > 0 
-        ? escapeHtml(JSON.stringify(relayParamsDisplay, null, 2))
+        ? AppDom.escapeHtml(JSON.stringify(relayParamsDisplay, null, 2))
         : t('capability_no_relay_params');
     const llmParamsJson = Object.keys(llmParams.properties).length > 0 
-        ? escapeHtml(JSON.stringify(llmParams, null, 2))
+        ? AppDom.escapeHtml(JSON.stringify(llmParams, null, 2))
         : t('capability_no_params');
     
     const container = document.getElementById('capability-detail');
@@ -156,7 +147,7 @@ async function loadCapability() {
         <div class="detail-section">
             <h3>${t("capability_mcp_template_content_label")}</h3>
             <p class="text-muted" style="font-size: 0.9em; margin-bottom: 0.5rem;">${t('capability_template_content_description')}</p>
-            <pre class="code-block" style="white-space: pre-wrap;">${escapeHtml(templateContent)}</pre>
+            <pre class="code-block" style="white-space: pre-wrap;">${AppDom.escapeHtml(templateContent)}</pre>
         </div>
         
         <div class="detail-section">
@@ -177,11 +168,11 @@ async function loadCapability() {
             <table class="detail-table">
                 <tr>
                     <th>${t("capability_resource_uri_label")}</th>
-                    <td><code style="font-size: 0.9em;">${escapeHtml(resourceUri)}</code></td>
+                        <td><code style="font-size: 0.9em;">${AppDom.escapeHtml(resourceUri)}</code></td>
                 </tr>
                 <tr>
                     <th>${t("capability_resource_mime_type_label")}</th>
-                    <td><span class="badge badge-method">${escapeHtml(resourceMimeType)}</span></td>
+                        <td><span class="badge badge-method">${AppDom.escapeHtml(resourceMimeType)}</span></td>
                 </tr>
             </table>
         </div>
@@ -189,7 +180,7 @@ async function loadCapability() {
         <div class="detail-section">
             <h3>${t("capability_resource_content_title")}</h3>
             <p class="text-muted" style="font-size: 0.9em; margin-bottom: 0.5rem;">${t('capability_resource_content_description')}</p>
-            <pre class="code-block" style="white-space: pre-wrap; max-height: 400px; overflow-y: auto;">${escapeHtml(resourceContent)}</pre>
+            <pre class="code-block" style="white-space: pre-wrap; max-height: 400px; overflow-y: auto;">${AppDom.escapeHtml(resourceContent)}</pre>
         </div>
         `;
     } else {
@@ -506,13 +497,10 @@ async function executeTest() {
         resultDiv.style.display = 'none';
         
         try {
-            const response = await fetch(`/api/capabilities/${capabilityId}/test`, {
+            const result = await AppApi.request(`/api/capabilities/${capabilityId}/test`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ params })
             });
-            
-            const result = await response.json();
             
             // Show result
             resultDiv.style.display = 'block';
@@ -550,5 +538,10 @@ function clearTestResult() {
 // Initialize language and load capability detail
 (async () => {
     await initLanguageSwitcher();
+    document.addEventListener('click', (event) => {
+        const action = event.target.closest('[data-action]')?.dataset.action;
+        if (action === 'execute-test') executeTest();
+        if (action === 'clear-test') clearTestResult();
+    });
     loadCapability();
 })();

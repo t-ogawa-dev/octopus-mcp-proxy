@@ -2,29 +2,31 @@
 E2E Test Configuration
 """
 
-import os
-
 import pytest
+
+from tests.e2e.helpers import admin_credentials, get_base_url
 
 
 @pytest.fixture(scope="session")
 def base_url():
     """Base URL for E2E tests"""
-    # When running in Docker, use service name 'web'
-    # When running locally, use localhost with configurable port
-    if os.getenv("DOCKER_ENV"):
-        return "http://web:5000"
-    port = os.getenv("FLASK_PORT", os.getenv("PORT", "5000"))
-    return f"http://localhost:{port}"
+    return get_base_url()
+
+
+@pytest.fixture(scope="session")
+def admin_credentials_fixture():
+    """Administrator credentials configured for the E2E target."""
+    return admin_credentials()
 
 
 @pytest.fixture
-def authenticated_page(page, base_url):
+def authenticated_page(page, base_url, admin_credentials_fixture):
     """Pre-authenticated page fixture"""
+    username, password = admin_credentials_fixture
     page.goto(f"{base_url}/login")
     page.wait_for_selector('input[name="username"]')
-    page.fill('input[name="username"]', "admin")
-    page.fill('input[name="password"]', "admin123")
+    page.fill('input[name="username"]', username)
+    page.fill('input[name="password"]', password)
 
     # Use expect_navigation like test_login.py
     with page.expect_navigation():

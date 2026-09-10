@@ -34,11 +34,11 @@
             </label>
             <div style="display: flex; gap: 20px; margin-top: 8px;">
                 <label class="radio-label">
-                    <input type="radio" name="source_type" value="value" checked onchange="toggleSourceType()">
+                    <input type="radio" name="source_type" value="value" checked data-action="toggle-source">
                     <span data-i18n="variable_source_value">直接入力</span>
                 </label>
                 <label class="radio-label">
-                    <input type="radio" name="source_type" value="env" onchange="toggleSourceType()">
+                    <input type="radio" name="source_type" value="env" data-action="toggle-source">
                     <span data-i18n="variable_source_env">環境変数</span>
                 </label>
             </div>
@@ -60,7 +60,7 @@
                     <input type="text" id="env_var_name" name="env_var_name" data-i18n-placeholder="variable_env_var_name_placeholder" placeholder="例: GITHUB_TOKEN">
                     <small data-i18n="variable_env_var_name_hint">システムの環境変数から値を取得します</small>
                 </div>
-                <button type="button" onclick="checkEnvVariable()" class="btn btn-secondary" style="white-space: nowrap;">
+                <button type="button" data-action="check-env" class="btn btn-secondary" style="white-space: nowrap;">
                     <span data-i18n="button_check_env">確認</span>
                 </button>
             </div>
@@ -100,7 +100,7 @@
         </div>
 
         <div class="form-actions">
-            <button type="button" class="btn btn-secondary" onclick="window.location.href='/variables'" data-i18n="button_cancel">キャンセル</button>
+            <a href="/variables" class="btn btn-secondary" data-i18n="button_cancel">キャンセル</a>
             <button type="submit" class="btn btn-primary" data-i18n="button_register">登録</button>
         </div>
     </form>

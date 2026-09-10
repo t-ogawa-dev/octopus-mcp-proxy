@@ -1,5 +1,5 @@
 // capabilities/edit.js - Capability Edit Page
-const capabilityId = parseInt(window.location.pathname.split('/')[2]);
+const capabilityId = Number.parseInt(window.location.pathname.split('/')[2], 10);
 let headerIndex = 0;
 let bodyIndex = 0;
 let currentAccessControl = 'public'; // デフォルトはpublic（制限なし）
@@ -143,6 +143,49 @@ function clearResourceFileEdit() {
     generateResourcePreviewEdit();
 }
 
+function setupStaticEventListeners() {
+    document.addEventListener('click', (event) => {
+        const actionElement = event.target.closest('[data-action]');
+        if (!actionElement) return;
+
+        const action = actionElement.dataset.action;
+        if (action === 'remove-row') actionElement.closest('.key-value-row, .llm-param-row')?.remove();
+        if (action === 'toggle-enum') toggleEnumField(actionElement);
+        if (action === 'toggle-tree') toggleTreeNode(actionElement.dataset.nodeId);
+        if (action === 'remove-tree') removeTreeNode(actionElement.dataset.nodeId);
+        if (action === 'add-tree-child') addChildToTreeNode(actionElement.dataset.nodeId);
+        if (action === 'add-tree-array-property') addArrayItemPropertyNode(actionElement.dataset.nodeId);
+        if (action === 'add-header') addHeaderRow();
+        if (action === 'add-fixed-param') addFixedParamRow();
+        if (action === 'add-llm-param') addLlmParamRow();
+        if (action === 'add-fixed-param-post') addFixedParamPostRow(null, 0);
+        if (action === 'add-llm-param-tree') addLlmParamTreeRow(null, 0);
+        if (action === 'move-enabled') moveToEnabled();
+        if (action === 'move-all-enabled') moveAllToEnabled();
+        if (action === 'move-disabled') moveToDisabled();
+        if (action === 'move-all-disabled') moveAllToDisabled();
+        if (action === 'select-resource-file') document.getElementById('resource_file_edit').click();
+        if (action === 'clear-resource-file') clearResourceFileEdit();
+    });
+
+    document.addEventListener('change', (event) => {
+        const action = event.target.dataset.action;
+        if (action === 'toggle-body-type') toggleBodyType();
+        if (action === 'toggle-resource-source') window.toggleResourceSourceEdit();
+        if (action === 'toggle-resource-input') toggleResourceInputTypeEdit();
+        if (action === 'resource-file-input' && event.target.files[0]) {
+            handleResourceFileUploadEdit(event.target.files[0]);
+        }
+        if (action === 'tree-type') handleTreeTypeChange(event.target.dataset.nodeId);
+        if (action === 'tree-array-type') handleArrayItemsTypeChange(event.target.dataset.nodeId);
+    });
+
+    document.addEventListener('input', (event) => {
+        if (event.target.dataset.action === 'prompt-preview-input') generatePromptPreviewEdit();
+        if (event.target.dataset.action === 'resource-preview-input') generateResourcePreviewEdit();
+    });
+}
+
 // リソースプレビュー生成 - for edit page
 function generateResourcePreviewEdit() {
     const inputType = document.querySelector('input[name="resource_input_type"]:checked')?.value || 'text';
@@ -195,8 +238,7 @@ function hideError() {
 
 // Load account permissions
 async function loadPermissions() {
-    const response = await fetch(`/api/capabilities/${capabilityId}/permissions`);
-    const data = await response.json();
+    const data = await AppApi.request(`/api/capabilities/${capabilityId}/permissions`);
     
     const enabledSelect = document.getElementById('enabled-accounts');
     const disabledSelect = document.getElementById('disabled-accounts');
@@ -271,15 +313,10 @@ async function savePermissions() {
     const enabledSelect = document.getElementById('enabled-accounts');
     const enabledAccountIds = Array.from(enabledSelect.options).map(opt => parseInt(opt.value));
     
-    const response = await fetch(`/api/capabilities/${capabilityId}/permissions`, {
+    await AppApi.request(`/api/capabilities/${capabilityId}/permissions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ account_ids: enabledAccountIds })
     });
-    
-    if (!response.ok) {
-        throw new Error('Failed to save permissions');
-    }
 }
 
 function toggleBodyType() {
@@ -310,7 +347,7 @@ function addHeaderRow(key = '', value = '', isReadOnly = false) {
                style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px; ${readOnlyStyle}">
         <input type="text" placeholder="${t('form_value_placeholder')}" value="${value}" ${readOnlyAttr}
                style="flex: 2; padding: 8px; border: 1px solid #ddd; border-radius: 4px; ${readOnlyStyle}">
-        ${!isReadOnly ? `<button type="button" onclick="this.parentElement.remove()" class="btn btn-sm btn-danger">${t('button_delete')}</button>` : ''}
+        ${!isReadOnly ? `<button type="button" data-action="remove-row" class="btn btn-sm btn-danger">${t('button_delete')}</button>` : ''}
     `;
     container.appendChild(row);
     headerIndex++;
@@ -331,7 +368,7 @@ function addFixedParamRow(key = '', value = '', isReadOnly = false) {
                style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px; ${readOnlyStyle}">
         <input type="text" placeholder="Value (or {{VARIABLE}})" value="${value}" ${readOnlyAttr}
                style="flex: 2; padding: 8px; border: 1px solid #ddd; border-radius: 4px; ${readOnlyStyle}">
-        ${!isReadOnly ? `<button type="button" onclick="this.parentElement.remove()" class="btn btn-sm btn-danger">${t('button_delete')}</button>` : ''}
+        ${!isReadOnly ? `<button type="button" data-action="remove-row" class="btn btn-sm btn-danger">${t('button_delete')}</button>` : ''}
     `;
     container.appendChild(row);
 }
@@ -367,7 +404,7 @@ function addLlmParamRow(paramData = null, isReadOnly = false) {
             </div>
             <div>
                 <label style="font-size: 0.85rem; font-weight: 600; color: #333; display: block; margin-bottom: 4px;">型 *</label>
-                <select class="llm-param-type" ${readOnlyAttr} onchange="toggleEnumField(this)" style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9rem; ${readOnlyStyle}">
+                <select class="llm-param-type" ${readOnlyAttr} data-action="toggle-enum" style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9rem; ${readOnlyStyle}">
                     <option value="string" ${data.type === 'string' ? 'selected' : ''}>string</option>
                     <option value="number" ${data.type === 'number' ? 'selected' : ''}>number</option>
                     <option value="integer" ${data.type === 'integer' ? 'selected' : ''}>integer</option>
@@ -401,7 +438,7 @@ function addLlmParamRow(paramData = null, isReadOnly = false) {
                        style="width: 16px; height: 16px; cursor: ${isReadOnly ? 'not-allowed' : 'pointer'};">
                 <span style="font-weight: 600; color: #333;">必須パラメータ</span>
             </label>
-            ${!isReadOnly ? `<button type="button" onclick="this.closest('.llm-param-row').remove()" class="btn btn-sm btn-danger">削除</button>` : ''}
+            ${!isReadOnly ? `<button type="button" data-action="remove-row" class="btn btn-sm btn-danger">削除</button>` : ''}
         </div>
     `;
     container.appendChild(row);
@@ -760,7 +797,7 @@ function addLlmParamTreeRow(containerOrParent = null, depth = 0, paramData = nul
     
     node.innerHTML = `
         <div class="tree-node-header" style="display: flex; gap: 10px; align-items: center; margin-bottom: 8px;">
-            <button type="button" class="expand-btn" onclick="toggleTreeNode(${nodeId})" 
+            <button type="button" class="expand-btn" data-action="toggle-tree" data-node-id="${nodeId}"
                     style="width: 24px; height: 24px; border: none; background: #f0f0f0; border-radius: 4px; cursor: pointer; font-size: 0.8rem; display: ${isExpandable ? 'block' : 'none'};">
                 ${expandIcon}
             </button>
@@ -770,7 +807,7 @@ function addLlmParamTreeRow(containerOrParent = null, depth = 0, paramData = nul
                            style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85rem;">
                 </div>
                 <div style="display: flex; align-items: center;">
-                    <select class="tree-param-type" onchange="handleTreeTypeChange(${nodeId})" 
+                    <select class="tree-param-type" data-action="tree-type" data-node-id="${nodeId}"
                             style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85rem;">
                         <option value="string" ${data.type === 'string' ? 'selected' : ''}>string</option>
                         <option value="number" ${data.type === 'number' ? 'selected' : ''}>number</option>
@@ -791,7 +828,7 @@ function addLlmParamTreeRow(containerOrParent = null, depth = 0, paramData = nul
                                style="width: 16px; height: 16px; margin: 0;">
                         <span style="color: #333;">必須</span>
                     </label>
-                    <button type="button" onclick="removeTreeNode(${nodeId})" class="btn btn-sm btn-danger" style="padding: 4px 8px; font-size: 0.8rem;">×</button>
+                    <button type="button" data-action="remove-tree" data-node-id="${nodeId}" class="btn btn-sm btn-danger" style="padding: 4px 8px; font-size: 0.8rem;">×</button>
                 </div>
             </div>
         </div>
@@ -862,12 +899,12 @@ function addLlmParamTreeRow(containerOrParent = null, depth = 0, paramData = nul
         
         <!-- Add child button (for object type) -->
         <div class="tree-add-child" style="display: ${data.type === 'object' && (!isFixedParam || depth === 0) ? 'block' : 'none'}; margin-left: 34px; margin-top: 8px;">
-            <button type="button" onclick="addChildToTreeNode(${nodeId})" class="btn btn-sm btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;">+ 子プロパティを追加</button>
+            <button type="button" data-action="add-tree-child" data-node-id="${nodeId}" class="btn btn-sm btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;">+ 子プロパティを追加</button>
         </div>
         
         <!-- Add array item property button (for array type with object items) -->
         <div class="tree-add-array-item-property" style="display: ${data.type === 'array' && data.itemsType === 'object' ? 'block' : 'none'}; margin-left: 34px; margin-top: 8px;">
-            <button type="button" onclick="addArrayItemPropertyNode(${nodeId})" class="btn btn-sm btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;">+ 配列要素のプロパティを定義</button>
+            <button type="button" data-action="add-tree-array-property" data-node-id="${nodeId}" class="btn btn-sm btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;">+ 配列要素のプロパティを定義</button>
         </div>
         
         <!-- Children container (for object type) -->
@@ -1528,8 +1565,7 @@ function buildPropertyFromNode(node) {
 }
 
 async function loadCapability() {
-    const response = await fetch(`/api/capabilities/${capabilityId}`);
-    const cap = await response.json();
+    const cap = await AppApi.request(`/api/capabilities/${capabilityId}`);
     
     console.log('=== Capability Data ===');
     console.log('Full capability:', cap);
@@ -1538,15 +1574,13 @@ async function loadCapability() {
     console.log('=====================');
     
     // Get parent app information to check if it's MCP type and get base URL
-    const appResponse = await fetch(`/api/apps/${cap.service_id}`);
-    const app = await appResponse.json();
+    const app = await AppApi.request(`/api/apps/${cap.service_id}`);
     const isMcpType = app.service_type === 'mcp';
     baseUrl = app.mcp_url || '';
     
     // Get MCP service information for breadcrumb
     const mcpServiceId = cap.mcp_service_id || 1; // APIから取得するか、デフォルト値
-    const mcpServiceResponse = await fetch(`/api/mcp-services/${mcpServiceId}`);
-    const mcpService = await mcpServiceResponse.json();
+    const mcpService = await AppApi.request(`/api/mcp-services/${mcpServiceId}`);
     
     // Update breadcrumb links with specific names
     document.getElementById('mcp-service-link').href = `/mcp-services/${mcpServiceId}`;
@@ -1631,8 +1665,7 @@ async function loadCapability() {
         // Load available resources for selection
         const globalResourceSelect = document.getElementById('global_resource_id');
         if (globalResourceSelect) {
-            const resourcesResponse = await fetch('/api/resources');
-            const resources = await resourcesResponse.json();
+            const resources = await AppApi.request('/api/resources');
             
             globalResourceSelect.innerHTML = resources.map(r => 
                 `<option value="${r.id}" ${cap.global_resource_id === r.id ? 'selected' : ''}>
@@ -1665,8 +1698,7 @@ async function loadCapability() {
             document.querySelector('input[name="resource_source"][value="existing"]').checked = true;
             
             // Fetch and display resource info
-            const resourceResponse = await fetch(`/api/resources/${cap.global_resource_id}`);
-            const resource = await resourceResponse.json();
+            const resource = await AppApi.request(`/api/resources/${cap.global_resource_id}`);
             
             document.getElementById('selected-resource-name-edit').textContent = resource.name;
             document.getElementById('selected-resource-uri-edit').textContent = resource.resource_id || '';
@@ -1782,7 +1814,7 @@ async function loadCapability() {
     
     // Hide "Add Header" button for MCP type
     if (isMcpType) {
-        const addHeaderBtn = document.querySelector('button[onclick="addHeaderRow()"]');
+        const addHeaderBtn = document.querySelector('button[data-action="add-header"]');
         if (addHeaderBtn) addHeaderBtn.style.display = 'none';
     }
     
@@ -1964,15 +1996,15 @@ async function loadCapability() {
     
     // Hide "Add" buttons for MCP type
     if (isMcpType) {
-        const addFixedBtn = document.querySelector('button[onclick="addFixedParamRow()"]');
+        const addFixedBtn = document.querySelector('button[data-action="add-fixed-param"]');
         if (addFixedBtn) addFixedBtn.style.display = 'none';
-        const addLlmBtn = document.querySelector('button[onclick="addLlmParamRow()"]');
+        const addLlmBtn = document.querySelector('button[data-action="add-llm-param"]');
         if (addLlmBtn) addLlmBtn.style.display = 'none';
         
         // Hide POST editor buttons
-        const addFixedPostBtn = document.querySelector('button[onclick="addFixedParamPostRow()"]');
+        const addFixedPostBtn = document.querySelector('button[data-action="add-fixed-param-post"]');
         if (addFixedPostBtn) addFixedPostBtn.style.display = 'none';
-        const addLlmTreeBtn = document.querySelector('button[onclick*="addLlmParamTreeRow"]');
+        const addLlmTreeBtn = document.querySelector('button[data-action="add-llm-param-tree"]');
         if (addLlmTreeBtn) addLlmTreeBtn.style.display = 'none';
     }
     
@@ -1984,6 +2016,7 @@ async function loadCapability() {
     await initLanguageSwitcher();
     const isMcpType = await loadCapability();
     await loadPermissions();
+    setupStaticEventListeners();
     
     // Setup drag and drop for resource file upload
     const dropZoneEdit = document.getElementById('resource-drop-zone-edit');
@@ -2281,27 +2314,24 @@ async function loadCapability() {
             data.body_params = bodyParams;
         }
         
-        const response = await fetch(`/api/capabilities/${capabilityId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
-        });
-        
-        if (!response.ok) {
-            const error = await response.json();
-            showError(t('capability_update_failed') + ': ' + (error.error || t('error_unknown')));
+        try {
+            await AppApi.request(`/api/capabilities/${capabilityId}`, {
+                method: 'PUT',
+                body: JSON.stringify(data)
+            });
+        } catch (error) {
+            showError(t('capability_update_failed') + ': ' + error.message);
             return;
         }
         
         // Update access control
-        const accessControlResponse = await fetch(`/api/capabilities/${capabilityId}/access-control`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ access_control: currentAccessControl })
-        });
-        
-        if (!accessControlResponse.ok) {
-            showError('Failed to update access control');
+        try {
+            await AppApi.request(`/api/capabilities/${capabilityId}/access-control`, {
+                method: 'PUT',
+                body: JSON.stringify({ access_control: currentAccessControl })
+            });
+        } catch (error) {
+            showError('Failed to update access control: ' + error.message);
             return;
         }
         

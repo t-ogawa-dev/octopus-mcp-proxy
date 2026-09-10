@@ -13,10 +13,7 @@ let currentSettings = {};
 
 async function loadSettings() {
     try {
-        const response = await fetch('/api/admin/log-settings');
-        if (!response.ok) throw new Error('Failed to load settings');
-        
-        currentSettings = await response.json();
+        currentSettings = await AppApi.request('/api/admin/log-settings');
         populateForm(currentSettings);
         
     } catch (error) {
@@ -54,6 +51,7 @@ function setupEventListeners() {
 }
 
 async function saveSettings() {
+    const form = document.getElementById('settings-form');
     const submitBtn = form.querySelector('button[type="submit"]');
     const originalText = submitBtn.textContent;
     submitBtn.disabled = true;
@@ -88,16 +86,10 @@ async function saveSettings() {
             }
         }
         
-        const response = await fetch('/api/admin/log-settings', {
+        await AppApi.request('/api/admin/log-settings', {
             method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json'
-            },
             body: JSON.stringify(settings)
         });
-        
-        if (!response.ok) throw new Error('Failed to save settings');
-        
         currentSettings = settings;
         showToast(t('settings_saved'), 'success');
         
@@ -131,20 +123,16 @@ async function executeCleanup() {
     }
     
     const cleanupBtn = document.getElementById('cleanup-btn');
-    const originalText = cleanupBtn.innerHTML;
+    const originalText = cleanupBtn.textContent;
     cleanupBtn.disabled = true;
     cleanupBtn.textContent = t('cleaning_up');
     
     const resultDiv = document.getElementById('cleanup-result');
     
     try {
-        const response = await fetch(`/api/connection-logs/cleanup?days=${days}`, {
+        const result = await AppApi.request(`/api/connection-logs/cleanup?days=${days}`, {
             method: 'DELETE'
         });
-        
-        if (!response.ok) throw new Error('Failed to cleanup logs');
-        
-        const result = await response.json();
         
         resultDiv.className = 'cleanup-result success';
         resultDiv.textContent = `${result.deleted_count}${t('cleanup_success')}`;
@@ -157,7 +145,7 @@ async function executeCleanup() {
         resultDiv.style.display = 'block';
     } finally {
         cleanupBtn.disabled = false;
-        cleanupBtn.innerHTML = originalText;
+        cleanupBtn.textContent = originalText;
     }
 }
 

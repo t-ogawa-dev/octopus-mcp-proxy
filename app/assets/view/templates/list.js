@@ -26,8 +26,7 @@ async function loadTemplates(type) {
         containerId = 'custom-templates';
     }
     
-    const response = await fetch(`/api/mcp-templates?type=${apiType}`);
-    let templates = await response.json();
+    let templates = await AppApi.request(`/api/mcp-templates?type=${encodeURIComponent(apiType)}`);
     
     // Filter by service_type for builtin templates
     if (type === 'api') {
@@ -53,11 +52,8 @@ async function loadTemplates(type) {
     if (type === 'api') {
         for (const template of templates) {
             try {
-                const capResponse = await fetch(`/api/mcp-templates/${template.id}/capabilities`);
-                if (capResponse.ok) {
-                    const capabilities = await capResponse.json();
-                    capabilityCounts[template.id] = capabilities.length;
-                }
+                const capabilities = await AppApi.request(`/api/mcp-templates/${template.id}/capabilities`);
+                capabilityCounts[template.id] = capabilities.length;
             } catch (e) {
                 console.error(`Failed to load capabilities for template ${template.id}:`, e);
             }
@@ -65,26 +61,28 @@ async function loadTemplates(type) {
     }
     
     container.innerHTML = templates.map(template => {
-        const officialLink = template.official_url ? 
-            `<a href="${template.official_url}" target="_blank" class="template-link" onclick="event.stopPropagation()" title="公式サイト">🔗</a>` : '';
+        const officialUrl = template.official_url || '';
+        const officialLink = /^https?:\/\//i.test(officialUrl)
+            ? `<a href="${AppDom.escapeHtml(officialUrl)}" target="_blank" rel="noopener noreferrer" class="template-link" data-action="official-link" title="公式サイト">🔗</a>`
+            : '';
         
         const capabilityBadge = type === 'api' && capabilityCounts[template.id] ? 
             `<span class="capability-badge">${capabilityCounts[template.id]} APIs</span>` : '';
         
         return `
-            <div class="template-card" onclick="window.location.href='/mcp-templates/${template.id}'">
+            <div class="template-card" data-template-id="${template.id}">
                 <div class="template-header">
-                    <div class="template-icon">${template.icon || '📦'}</div>
+                    <div class="template-icon">${AppDom.escapeHtml(template.icon || '📦')}</div>
                     <div class="template-info">
-                        <div class="template-name">${template.name} ${officialLink}</div>
-                        <div class="template-category">${template.category || 'General'} ${capabilityBadge}</div>
+                        <div class="template-name">${AppDom.escapeHtml(template.name)} ${officialLink}</div>
+                        <div class="template-category">${AppDom.escapeHtml(template.category || 'General')} ${capabilityBadge}</div>
                     </div>
                 </div>
-                <div class="template-description">${template.description || ''}</div>
-                ${template.mcp_url ? `<div class="template-url">${template.mcp_url}</div>` : ''}
+                <div class="template-description">${AppDom.escapeHtml(template.description || '')}</div>
+                ${template.mcp_url ? `<div class="template-url">${AppDom.escapeHtml(template.mcp_url)}</div>` : ''}
                 <div class="template-meta">
                     <div class="template-actions">
-                        <button class="btn-small btn-use" onclick="useTemplate(${template.id}, event)" data-i18n="mcp_template_use_button">${t('mcp_template_use_button')}</button>
+                        <button type="button" class="btn-small btn-use" data-action="use-template" data-i18n="mcp_template_use_button">${t('mcp_template_use_button')}</button>
                     </div>
                 </div>
             </div>
@@ -92,8 +90,7 @@ async function loadTemplates(type) {
     }).join('');
 }
 
-function useTemplate(templateId, event) {
-    event.stopPropagation();
+function useTemplate(templateId) {
     selectedTemplateId = templateId;
     
     // Load MCP services
@@ -119,8 +116,7 @@ async function loadMcpServicesForModal() {
     const select = document.getElementById('modal-mcp-service');
     
     try {
-        const response = await fetch('/api/mcp-services');
-        const services = await response.json();
+        const services = await AppApi.request('/api/mcp-services');
         
         if (services.length === 0) {
             select.innerHTML = '<option value="" disabled>' + t('mcp_template_no_services') + '</option>';
@@ -221,34 +217,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function applyTemplate(templateId, mcpServiceId) {
     try {
-        const response = await fetch(`/api/mcp-templates/${templateId}/prepare-app`, {
+        const result = await AppApi.request(`/api/mcp-templates/${templateId}/prepare-app`, {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({mcp_service_id: mcpServiceId})
         });
-        
-        if (response.ok) {
-            const result = await response.json();
-            
-            // Store template data in sessionStorage for the form to use
-            sessionStorage.setItem('app_template_data', JSON.stringify(result.template_data));
-            
-            // Redirect to app creation form with template flag
-            window.location.href = result.redirect_url + '?from=template';
-        } else {
-            // Handle non-OK response
-            let errorMessage = 'Unknown error';
-            const contentType = response.headers.get('content-type');
-            
-            if (contentType && contentType.includes('application/json')) {
-                const error = await response.json();
-                errorMessage = error.error || error.message || errorMessage;
-            } else {
-                errorMessage = `Server error (${response.status})`;
-            }
-            
-            showModalError(t('app_register_failed') + ': ' + errorMessage);
-        }
+
+        sessionStorage.setItem('app_template_data', JSON.stringify(result.template_data));
+        window.location.href = result.redirect_url + '?from=template';
     } catch (e) {
         console.error('Apply template exception:', e);
         showModalError(t('app_register_failed') + ': ' + e.message);
@@ -302,14 +277,9 @@ async function deleteTemplate(templateId, event) {
     if (!confirmed) return;
     
     try {
-        const response = await fetch(`/api/mcp-templates/${templateId}`, {method: 'DELETE'});
-        if (response.ok) {
-            showFlashMessage('削除しました');
-            loadTemplates('custom');
-        } else {
-            const error = await response.json();
-            await modal.error(error.error || t('common_error'));
-        }
+        await AppApi.request(`/api/mcp-templates/${templateId}`, {method: 'DELETE'});
+        showFlashMessage('削除しました');
+        await loadTemplates('custom');
     } catch (e) {
         await modal.error(t('common_error') + ': ' + e.message);
     }
@@ -332,6 +302,46 @@ document.querySelectorAll('.tab').forEach(tab => {
         currentTab = tabName;
         loadTemplates(tabName);
     });
+});
+
+document.addEventListener('click', (event) => {
+    const actionElement = event.target.closest('[data-action]');
+    const action = actionElement?.dataset.action;
+
+    if (action === 'check-updates') checkTemplateUpdates();
+    if (action === 'open-import') openImportModal();
+    if (action === 'close-use-modal') closeModal();
+    if (action === 'confirm-template-use') confirmTemplateUse();
+    if (action === 'close-success-modal') closeSuccessModal();
+    if (action === 'go-to-app') goToAppDetail();
+    if (action === 'close-import') closeImportModal();
+    if (action === 'select-file') document.getElementById('file-input').click();
+    if (action === 'clear-file') clearFile();
+    if (action === 'confirm-import') confirmImport();
+    if (action === 'close-update') closeUpdateModal();
+    if (action === 'sync-templates') syncTemplates();
+
+    if (action && action !== 'official-link' && !action.startsWith('use-template')) {
+        return;
+    }
+
+    if (actionElement?.dataset.action === 'official-link') {
+        event.stopPropagation();
+        return;
+    }
+
+    const templateCard = actionElement?.closest('[data-template-id]');
+    if (!templateCard) return;
+
+    if (actionElement?.dataset.action === 'use-template') {
+        event.stopPropagation();
+        useTemplate(templateCard.dataset.templateId);
+        return;
+    }
+
+    if (!actionElement) {
+        window.location.href = `/mcp-templates/${templateCard.dataset.templateId}`;
+    }
 });
 
 // Import functionality
@@ -494,12 +504,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function checkTemplateUpdatesOnLoad() {
     try {
-        const response = await fetch('/api/templates/check-updates');
-        if (response.ok) {
-            const data = await response.json();
-            if (data.has_update) {
-                document.getElementById('update-badge').style.display = 'inline-block';
-            }
+        const data = await AppApi.request('/api/templates/check-updates');
+        if (data.has_update) {
+            document.getElementById('update-badge').style.display = 'inline-block';
         }
     } catch (error) {
         console.error('Failed to check for template updates:', error);
@@ -527,12 +534,7 @@ async function checkTemplateUpdates() {
     syncBtn.style.display = 'none';
     
     try {
-        const response = await fetch('/api/templates/check-updates');
-        const data = await response.json();
-        
-        if (!response.ok) {
-            throw new Error(data.error || 'Failed to check for updates');
-        }
+        const data = await AppApi.request('/api/templates/check-updates');
         
         updateProgress.style.display = 'none';
         updateCheckContent.style.display = 'block';
@@ -580,18 +582,9 @@ async function syncTemplates() {
     syncBtn.disabled = true;
     
     try {
-        const response = await fetch('/api/templates/sync', {
+        const data = await AppApi.request('/api/templates/sync', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            }
         });
-        
-        const data = await response.json();
-        
-        if (!response.ok) {
-            throw new Error(data.error || 'Failed to sync templates');
-        }
         
         // Success - close modal and reload templates
         closeUpdateModal();

@@ -3,8 +3,7 @@
  */
 
 async function loadMcpServices() {
-    const response = await fetch('/api/mcp-services');
-    const services = await response.json();
+    const services = await AppApi.request('/api/mcp-services');
     
     const container = document.getElementById('services-list');
     
@@ -43,27 +42,32 @@ async function loadMcpServices() {
             endpoint = `${protocol}//${subdomainHost}/mcp`;
         }
         
+        const escapedName = AppDom.escapeHtml(service.name);
+        const escapedIdentifier = AppDom.escapeHtml(service.identifier);
+        const escapedEndpoint = AppDom.escapeHtml(endpoint);
+        const escapedDescription = AppDom.escapeHtml(service.description);
+
         return `
-        <div class="list-item ${!service.is_enabled ? 'disabled' : ''}">
+        <div class="list-item ${!service.is_enabled ? 'disabled' : ''}" data-service-id="${service.id}">
             <div class="list-item-main">
-                <h3><a href="/mcp-services/${service.id}">${service.name}</a></h3>
+                <h3><a href="/mcp-services/${service.id}">${escapedName}</a></h3>
                 <div class="list-item-meta">
-                    <span class="badge">${t('mcp_service_identifier')}: ${service.identifier}</span>
+                    <span class="badge">${t('mcp_service_identifier')}: ${escapedIdentifier}</span>
                     ${!service.is_enabled ? `<span class="status-badge disabled">${t('status_disabled')}</span>` : `<span class="status-badge enabled">${t('status_enabled')}</span>`}
                     ${(service.access_control === 'restricted') ? `<span class="badge badge-access-restricted">${t('access_control_restricted')}</span>` : `<span class="badge badge-access-public">${t('access_control_public')}</span>`}
                     <span class="text-muted">${t('mcp_service_apps_count')}: ${service.apps_count || 0}</span>
                 </div>
-                <p class="text-muted" style="font-size: 12px; margin-top: 5px;">Endpoint: <code>${endpoint}</code></p>
-                ${service.description ? `<p class="text-muted">${service.description}</p>` : ''}
+                <p class="text-muted" style="font-size: 12px; margin-top: 5px;">Endpoint: <code>${escapedEndpoint}</code></p>
+                ${service.description ? `<p class="text-muted">${escapedDescription}</p>` : ''}
             </div>
             <div class="list-item-actions">
                 <label class="toggle-switch">
-                    <input type="checkbox" ${service.is_enabled ? 'checked' : ''} onchange="toggleMcpService(${service.id})">
+                    <input type="checkbox" data-action="toggle" ${service.is_enabled ? 'checked' : ''}>
                     <span class="toggle-slider"></span>
                 </label>
                 <a href="/mcp-services/${service.id}/apps" class="btn btn-sm btn-primary">${t('mcp_service_apps_button')}</a>
                 <a href="/mcp-services/${service.id}/edit" class="btn btn-sm btn-secondary">${t('button_edit')}</a>
-                <button onclick="deleteMcpService(${service.id})" class="btn btn-sm btn-danger">${t('button_delete')}</button>
+                <button type="button" data-action="delete" class="btn btn-sm btn-danger">${t('button_delete')}</button>
             </div>
         </div>
         `;
@@ -72,16 +76,10 @@ async function loadMcpServices() {
 
 async function toggleMcpService(id) {
     try {
-        const response = await fetch(`/api/mcp-services/${id}/toggle`, {
+        await AppApi.request(`/api/mcp-services/${id}/toggle`, {
             method: 'POST'
         });
-        
-        if (response.ok) {
-            loadMcpServices();
-        } else {
-            const error = await response.json();
-            await modal.error(t('common_error') + ': ' + (error.error || t('error_unknown')));
-        }
+        await loadMcpServices();
     } catch (e) {
         await modal.error(t('common_error') + ': ' + e.message);
     }
@@ -91,8 +89,12 @@ async function deleteMcpService(id) {
     const confirmed = await modal.confirmDelete(t('mcp_service_delete_confirm'));
     if (!confirmed) return;
     
-    await fetch(`/api/mcp-services/${id}`, { method: 'DELETE' });
-    loadMcpServices();
+    try {
+        await AppApi.request(`/api/mcp-services/${id}`, { method: 'DELETE' });
+        await loadMcpServices();
+    } catch (e) {
+        await modal.error(t('common_error') + ': ' + e.message);
+    }
 }
 
 // Import Modal Functions
@@ -150,18 +152,11 @@ async function confirmImport() {
     try {
         const fileContent = await selectedFile.text();
         
-        const response = await fetch('/api/mcp-services/import', {
+        const result = await AppApi.request('/api/mcp-services/import', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-yaml' },
             body: fileContent
         });
-        
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Import failed');
-        }
-        
-        const result = await response.json();
         
         closeImportModal();
         
@@ -169,23 +164,47 @@ async function confirmImport() {
         let message = currentLanguage === 'ja' ? 'インポートしました' : 'Imported successfully';
         if (result.identifier_changed) {
             message += currentLanguage === 'ja' 
-                ? `<br><br>識別子が重複していたため、新しい識別子「${result.mcp_service.identifier}」が割り当てられました。`
-                : `<br><br>Identifier was changed to "${result.mcp_service.identifier}" due to conflict.`;
+                ? ` 識別子が重複していたため、新しい識別子「${result.mcp_service.identifier}」が割り当てられました。`
+                : ` Identifier was changed to "${result.mcp_service.identifier}" due to conflict.`;
         }
         await modal.success(message);
         
-        loadMcpServices();
+        await loadMcpServices();
     } catch (error) {
         console.error('Import error:', error);
         showImportError(error.message || (currentLanguage === 'ja' ? 'インポートに失敗しました' : 'Import failed'));
     }
 }
 
-// Setup drag and drop
-const dropZone = document.getElementById('drop-zone');
-const fileInput = document.getElementById('file-input');
+function setupEventListeners() {
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
 
-if (dropZone) {
+    document.addEventListener('click', (event) => {
+        const actionElement = event.target.closest('[data-action]');
+        if (!actionElement) return;
+
+        const action = actionElement.dataset.action;
+        const serviceItem = actionElement.closest('[data-service-id]');
+        const serviceId = serviceItem?.dataset.serviceId;
+
+        if (action === 'open-import') openImportModal();
+        if (action === 'close-import') closeImportModal();
+        if (action === 'select-file') fileInput.click();
+        if (action === 'clear-file') clearFile();
+        if (action === 'confirm-import') confirmImport();
+        if (action === 'delete' && serviceId) deleteMcpService(serviceId);
+    });
+
+    document.addEventListener('change', (event) => {
+        const actionElement = event.target.closest('[data-action="toggle"]');
+        if (!actionElement) return;
+
+        const serviceItem = actionElement.closest('[data-service-id]');
+        if (serviceItem) toggleMcpService(serviceItem.dataset.serviceId);
+    });
+
+    if (dropZone) {
     dropZone.addEventListener('dragover', (e) => {
         e.preventDefault();
         dropZone.classList.add('drag-over');
@@ -202,17 +221,19 @@ if (dropZone) {
         const file = e.dataTransfer.files[0];
         handleFileSelect(file);
     });
-}
+    }
 
-if (fileInput) {
+    if (fileInput) {
     fileInput.addEventListener('change', (e) => {
         const file = e.target.files[0];
         handleFileSelect(file);
     });
+    }
 }
 
 // 言語初期化完了後にMCPサービス一覧を読み込む
 (async () => {
     await initLanguageSwitcher();
-    loadMcpServices();
+    setupEventListeners();
+    await loadMcpServices();
 })();
