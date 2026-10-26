@@ -236,8 +236,7 @@ class TemplateSyncService:
             # (ON DELETE CASCADE非設定)違反でテンプレート本体の削除が失敗する
             logger.info("Removing all existing builtin templates...")
             old_template_ids = [
-                row[0]
-                for row in db.session.query(McpServiceTemplate.id).filter_by(template_type="builtin").all()
+                row[0] for row in db.session.query(McpServiceTemplate.id).filter_by(template_type="builtin").all()
             ]
             if old_template_ids:
                 McpCapabilityTemplate.query.filter(McpCapabilityTemplate.template_id.in_(old_template_ids)).delete(

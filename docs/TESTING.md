@@ -102,17 +102,20 @@ pytest
 
 ## テストの実行方法
 
-### 全テストを実行
+### unit / integration テストを実行
 
 ```bash
 pytest
 ```
 
-または
+または（カバレッジ付き、`htmlcov/` にレポートを出力）
 
 ```bash
 ./run_tests.sh
 ```
+
+引数なしの `pytest` と `run_tests.sh` は `tests/unit` と `tests/integration` だけを実行します。
+E2E テストはサーバーとブラウザが必要なため、後述の手順で別に実行してください。
 
 ### 特定のファイルのテストを実行
 
@@ -194,8 +197,9 @@ DBスキーマ、エラーレスポンス、i18n、タイムアウト機能な�
 - `e2e/test_login.py` - ログイン/ログアウト
 - `e2e/test_dashboard.py` - ダッシュボード
 - `e2e/test_javascript_errors.py` - JavaScriptエラー検出
-- `e2e/services/test_services.py` - サービス管理
+- `e2e/services/test_services.py` - App 管理（作成・編集・接続テスト）
 - `e2e/capabilities/test_capabilities.py` - Capabilities 管理
+- `e2e/capabilities/test_capability_schema_roundtrip.py` - 新規作成と編集でスキーマが一致することの確認
 - `e2e/accounts/test_accounts.py` - アカウント管理
 - `e2e/mcp_services/test_mcp_services.py` - MCPサービス管理
 - `e2e/mcp_templates/test_templates.py` - テンプレート管理
@@ -218,10 +222,11 @@ def test_login_with_valid_credentials(self, page: Page):
 **E2E テストの実行方法:**
 
 ```bash
-# サーバーを起動（別ターミナル）
-docker compose up
+# 推奨: Docker で実行（ブラウザ入りのイメージを使用）
+docker compose up -d
+docker compose --profile e2e run --rm e2e
 
-# 全E2Eテスト実行
+# ローカルで実行する場合（サーバーを起動し、Playwright のブラウザを導入済みであること）
 pytest tests/e2e/
 
 # 特定のページのテスト実行
@@ -229,8 +234,8 @@ pytest tests/e2e/test_login.py
 pytest tests/e2e/services/test_services.py
 pytest tests/e2e/mcp_templates/test_templates.py
 
-# マーカーで実行
-pytest -m e2e
+# マーカーで実行（パスの指定が必要）
+pytest tests/e2e/ -m e2e
 
 # ヘッドレスモード無効（ブラウザを表示）
 pytest tests/e2e/ --headed

@@ -12,9 +12,9 @@ def test_capabilities_table_has_timeout_seconds(app, db):
         inspector = inspect(db.engine)
         columns = [col["name"] for col in inspector.get_columns("capabilities")]
 
-        assert "timeout_seconds" in columns, (
-            "timeout_seconds column is missing from capabilities table. Run: flask db upgrade"
-        )
+        assert (
+            "timeout_seconds" in columns
+        ), "timeout_seconds column is missing from capabilities table. Run: flask db upgrade"
 
 
 def test_capabilities_table_has_access_control(app, db):
@@ -23,9 +23,9 @@ def test_capabilities_table_has_access_control(app, db):
         inspector = inspect(db.engine)
         columns = [col["name"] for col in inspector.get_columns("capabilities")]
 
-        assert "access_control" in columns, (
-            "access_control column is missing from capabilities table. Run: flask db upgrade"
-        )
+        assert (
+            "access_control" in columns
+        ), "access_control column is missing from capabilities table. Run: flask db upgrade"
 
 
 def test_all_model_columns_exist_in_database(app, db):

@@ -34,11 +34,11 @@ Octopus MCP Proxy は次のコンテナで構成されます（`web` と `mcp` �
 - `caddy`: リバースプロキシ / TLS（パスで `web` と `mcp` に振り分け）
 - `web`: 管理画面 + REST API（起動時に DB マイグレーションを実行）
 - `mcp`: MCP エンドポイント（複数レプリカ / 別ホストにスケール可能）
-- `redis`: Streamable HTTP セッションの共有ストア
+- `redis`: 旧仕様の Streamable HTTP セッションの共有ストア
 - `db`: PostgreSQL
 
 1台運用（全部入り）も複数台運用（WEB/MCP/Redis を別サーバに分散）も**同じ compose 定義**で動きます。
-MCP セッションは `REDIS_URL` があれば Redis で共有され、未設定ならプロセス内メモリにフォールバックします。
+旧仕様の MCP セッションは `REDIS_URL` があれば Redis で共有され、未設定ならプロセス内メモリにフォールバックします。
 詳細は [スケーリング・コンテナ構成](docs/SCALING.md) を参照してください。
 
 ## 起動方法

@@ -222,3 +222,18 @@ class TestControllerHelpersUseStore:
         # The same id is not valid on the admin namespace
         assert mcp_controller._is_valid_session("dup") is True
         assert admin_mcp_controller._is_valid_session("dup") is False
+
+    def test_redis_outage_does_not_raise(self):
+        from unittest.mock import MagicMock
+
+        from redis.exceptions import ConnectionError as RedisConnectionError
+
+        client = MagicMock()
+        client.setex.side_effect = RedisConnectionError("down")
+        client.exists.side_effect = RedisConnectionError("down")
+        client.delete.side_effect = RedisConnectionError("down")
+        store = RedisSessionStore(client, prefix="p:")
+
+        store.register("sid-1", ttl=60)
+        store.remove("sid-1")
+        assert store.is_valid("sid-1") is True

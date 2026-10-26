@@ -6,11 +6,12 @@
 
 ## 概要
 
-この MCP サーバーは 3 つの主要なエンドポイントを提供します:
+この MCP サーバーは 2 つの主要なエンドポイントを提供します:
 
 1. **GET /mcp** - Capabilities 一覧取得
 2. **POST /mcp** - MCP プロトコルリクエスト処理
-3. **POST /tools/<tool_id>** - 直接 Tool 実行
+
+Tool の実行は `POST /mcp` の `tools/call` で行います。旧エンドポイント `POST /tools/<tool_id>` と `POST /mcp/<subdomain>` は削除されました。
 
 すべてのエンドポイントはサブドメインベースのルーティングをサポートしています。
 以下は **Docker Compose 起動時 (Caddy 経由、`https://`・ポート番号なし)** のURLです。
@@ -109,8 +110,9 @@ curl -k -H "Authorization: Bearer abc123..." \
 
 1. サブドメインからサービスを特定
 2. Bearer トークンからユーザーを特定
-3. ユーザーが権限を持つ Capability のみを返却
-4. 各 Capability の InputSchema は、登録された Body パラメータから自動生成
+3. ユーザーが権限を持つ、有効な Tool のみを返却 (`tools/list` と同じ結果)
+4. 各 Tool の InputSchema は、登録された Body パラメータから自動生成
+5. URL・ヘッダーなどの内部設定は返却しない
 
 ---
 
@@ -118,12 +120,43 @@ curl -k -H "Authorization: Bearer abc123..." \
 
 標準的な MCP プロトコルに従ってリクエストを処理します。
 
+`2026-07-28` のステートレスリクエストでは、`initialize` や `Mcp-Session-Id` なしで
+リクエストを送信できます。`server/discover` で対応プロトコルを確認できます。
+`2024-11-05` の旧仕様クライアントによる `initialize` と `Mcp-Session-Id` を使った
+セッション方式も後方互換として利用できます。
+
 ### 対応メソッド
 
+- `server/discover` - 対応プロトコルバージョンの取得
+- `initialize` - 旧仕様クライアント用のセッション初期化
 - `tools/list` - Tool 一覧取得 (GET /mcp と同等)
 - `tools/call` - Tool 実行
 
-### 2.1 tools/list
+### 2.1 server/discover
+
+#### リクエスト
+
+```bash
+curl -k -X POST \
+  -H "Authorization: Bearer abc123..." \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"server/discover"}' \
+  https://myservice.lvh.me/mcp
+```
+
+#### レスポンス
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "protocolVersions": ["2026-07-28", "2024-11-05"]
+  }
+}
+```
+
+### 2.2 tools/list
 
 #### リクエスト
 
@@ -164,7 +197,7 @@ curl -k -X POST \
 }
 ```
 
-### 2.2 tools/call
+### 2.3 tools/call
 
 #### リクエスト
 
@@ -210,71 +243,8 @@ curl -k -X POST \
   "jsonrpc": "2.0",
   "id": 2,
   "error": {
-    "code": -32603,
-    "message": "Permission denied for tool: get_weather"
-  }
-}
-```
-
----
-
-## 3. POST /tools/<tool_id> - 直接 Tool 実行
-
-Tool ID を直接指定して実行するシンプルなエンドポイント。
-
-### リクエスト
-
-```bash
-curl -k -X POST \
-  -H "Authorization: Bearer abc123..." \
-  -H "Content-Type: application/json" \
-  -d '{
-    "arguments": {
-      "city": "Tokyo"
-    }
-  }' \
-  https://myservice.lvh.me/tools/get_weather
-```
-
-### Tool ID の指定方法
-
-- **Capability 名** (推奨): `get_weather`
-- **Capability ID**: `1`, `2`, `3` など
-
-### レスポンス (成功時)
-
-```json
-{
-  "content": [
-    {
-      "type": "text",
-      "text": "{\"success\": true, \"data\": {\"temperature\": 25}}"
-    }
-  ],
-  "isError": false
-}
-```
-
-### レスポンス (権限エラー)
-
-```json
-{
-  "jsonrpc": "2.0",
-  "error": {
     "code": -32000,
     "message": "Permission denied for tool: get_weather"
-  }
-}
-```
-
-### レスポンス (Tool 未発見)
-
-```json
-{
-  "jsonrpc": "2.0",
-  "error": {
-    "code": -32602,
-    "message": "Tool not found: invalid_tool"
   }
 }
 ```
@@ -349,11 +319,16 @@ response = requests.get(
 capabilities = response.json()
 print(capabilities)
 
-# Tool実行
+# Tool実行 (MCP プロトコルの tools/call)
 response = requests.post(
-    'https://myservice.lvh.me/tools/get_weather',
+    'https://myservice.lvh.me/mcp',
     headers=headers,
-    json={'arguments': {'city': 'Tokyo'}}
+    json={
+        'jsonrpc': '2.0',
+        'id': 1,
+        'method': 'tools/call',
+        'params': {'name': 'get_weather', 'arguments': {'city': 'Tokyo'}},
+    }
 )
 result = response.json()
 print(result)
@@ -366,14 +341,7 @@ print(result)
 curl -k -H "Authorization: Bearer YOUR_TOKEN" \
   https://myservice.lvh.me/mcp
 
-# 2. 特定のToolを実行
-curl -k -X POST \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"arguments": {"city": "Tokyo"}}' \
-  https://myservice.lvh.me/tools/get_weather
-
-# 3. MCPプロトコルでToolを実行
+# 2. MCPプロトコルでToolを実行
 curl -k -X POST \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
@@ -407,27 +375,6 @@ curl -k -X POST \
 5. ユーザーIDとService IDから権限のあるCapabilityを取得
    ↓
 6. Capabilityリストを整形して返却
-```
-
-### POST /tools/<tool_id>
-
-```
-1. リクエスト受信
-   ↓
-2. サブドメインを抽出
-   ↓
-3. Bearerトークンを検証
-   ↓
-4. サブドメインからServiceを検索
-   ↓
-5. tool_idからCapabilityを検索 (名前またはID)
-   ↓
-6. ユーザーの権限を確認
-   ↓
-7. 権限あり → Capability実行 (API/MCP中継)
-   権限なし → エラーレスポンス
-   ↓
-8. 結果を返却
 ```
 
 ### POST /mcp (tools/call)

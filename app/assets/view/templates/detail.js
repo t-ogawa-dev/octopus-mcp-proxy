@@ -4,8 +4,7 @@ let template = null;
 
 async function loadTemplate() {
     try {
-        const response = await fetch(`/api/mcp-templates/${TEMPLATE_ID}`);
-        template = await response.json();
+        template = await AppApi.request(`/api/mcp-templates/${TEMPLATE_ID}`);
         
         // Update page
         document.getElementById('template-name').textContent = `${template.icon || '📦'} ${template.name}`;
@@ -32,14 +31,22 @@ async function loadTemplate() {
             }
             
             urlItem.style.display = 'flex';
-            urlValue.innerHTML = `<a href="${template.mcp_url}" target="_blank">${template.mcp_url}</a>`;
+            const safeMcpUrl = AppDom.safeHttpUrl(template.mcp_url);
+            urlValue.textContent = template.mcp_url;
+            if (safeMcpUrl) {
+                urlValue.innerHTML = `<a href="${AppDom.escapeHtml(safeMcpUrl)}" target="_blank" rel="noopener noreferrer">${AppDom.escapeHtml(template.mcp_url)}</a>`;
+            }
         }
         
         // Official URL
         if (template.official_url) {
             document.getElementById('official-url-item').style.display = 'flex';
             const officialUrlElement = document.getElementById('detail-official-url');
-            officialUrlElement.innerHTML = `<a href="${template.official_url}" target="_blank">${template.official_url}</a>`;
+            const safeOfficialUrl = AppDom.safeHttpUrl(template.official_url);
+            officialUrlElement.textContent = template.official_url;
+            if (safeOfficialUrl) {
+                officialUrlElement.innerHTML = `<a href="${AppDom.escapeHtml(safeOfficialUrl)}" target="_blank" rel="noopener noreferrer">${AppDom.escapeHtml(template.official_url)}</a>`;
+            }
         }
         
         // Headers
@@ -56,8 +63,8 @@ async function loadTemplate() {
         } else {
             headersContainer.innerHTML = Object.entries(headers).map(([key, value]) => `
                 <div class="header-item">
-                    <span class="header-key">${key}</span>
-                    <span class="header-value">${value}</span>
+                    <span class="header-key">${AppDom.escapeHtml(key)}</span>
+                    <span class="header-value">${AppDom.escapeHtml(value)}</span>
                 </div>
             `).join('');
         }
@@ -84,8 +91,7 @@ async function loadTemplate() {
 
 async function loadCapabilities() {
     try {
-        const response = await fetch(`/api/mcp-templates/${TEMPLATE_ID}/capabilities`);
-        const capabilities = await response.json();
+        const capabilities = await AppApi.request(`/api/mcp-templates/${TEMPLATE_ID}/capabilities`);
         
         const container = document.getElementById('capabilities-list');
         
@@ -101,12 +107,12 @@ async function loadCapabilities() {
             return `
                 <div class="capability-card">
                     <div class="capability-header">
-                        <span class="capability-type-badge">${cap.capability_type}</span>
-                        <span class="http-method ${methodClass}">${method}</span>
-                        <span class="capability-name">${cap.name}</span>
+                        <span class="capability-type-badge">${AppDom.escapeHtml(cap.capability_type)}</span>
+                        <span class="http-method ${methodClass}">${AppDom.escapeHtml(method)}</span>
+                        <span class="capability-name">${AppDom.escapeHtml(cap.name)}</span>
                     </div>
-                    ${cap.endpoint_path ? `<div class="capability-endpoint">${cap.endpoint_path}</div>` : ''}
-                    ${cap.description ? `<div class="capability-description">${cap.description}</div>` : ''}
+                    ${cap.endpoint_path ? `<div class="capability-endpoint">${AppDom.escapeHtml(cap.endpoint_path)}</div>` : ''}
+                    ${cap.description ? `<div class="capability-description">${AppDom.escapeHtml(cap.description)}</div>` : ''}
                 </div>
             `;
         }).join('');
@@ -148,17 +154,11 @@ async function deleteTemplate() {
     if (!confirmed) return;
     
     try {
-        const response = await fetch(`/api/mcp-templates/${TEMPLATE_ID}`, {
+        await AppApi.request(`/api/mcp-templates/${TEMPLATE_ID}`, {
             method: 'DELETE'
         });
-        
-        if (response.ok) {
-            await modal.success(t('mcp_template_deleted') || 'テンプレートを削除しました');
-            window.location.href = '/mcp-templates';
-        } else {
-            const error = await response.json();
-            await modal.error(t('common_error') + ': ' + (error.error || t('error_unknown')));
-        }
+        await modal.success(t('mcp_template_deleted') || 'テンプレートを削除しました');
+        window.location.href = '/mcp-templates';
     } catch (e) {
         await modal.error(t('common_error') + ': ' + e.message);
     }
@@ -167,5 +167,10 @@ async function deleteTemplate() {
 // Initialize
 (async () => {
     await initLanguageSwitcher();
+    document.addEventListener('click', (event) => {
+        const action = event.target.closest('[data-action]')?.dataset.action;
+        if (action === 'export-template') exportTemplate();
+        if (action === 'delete-template') deleteTemplate();
+    });
     await loadTemplate();
 })();

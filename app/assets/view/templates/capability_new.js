@@ -12,7 +12,7 @@ function addHeader() {
     row.innerHTML = `
         <input type="text" placeholder="${t('capability_header_key') || 'キー'}" data-header-key="${index}">
         <input type="text" placeholder="${t('capability_header_value') || '値'}" data-header-value="${index}">
-        <button type="button" onclick="removeHeader(${index})">${t('button_remove') || '削除'}</button>
+        <button type="button" data-action="remove-header" data-index="${index}">${t('button_remove') || '削除'}</button>
     `;
     
     container.appendChild(row);
@@ -39,7 +39,7 @@ function renderHeaders() {
         row.innerHTML = `
             <input type="text" placeholder="${t('capability_header_key') || 'キー'}" data-header-key="${index}" value="${header.key}">
             <input type="text" placeholder="${t('capability_header_value') || '値'}" data-header-value="${index}" value="${header.value}">
-            <button type="button" onclick="removeHeader(${index})">${t('button_remove') || '削除'}</button>
+            <button type="button" data-action="remove-header" data-index="${index}">${t('button_remove') || '削除'}</button>
         `;
         container.appendChild(row);
     });
@@ -54,7 +54,7 @@ function addParam() {
     row.innerHTML = `
         <input type="text" placeholder="${t('capability_param_key') || 'キー'}" data-param-key="${index}">
         <input type="text" placeholder="${t('capability_param_value') || '値'}" data-param-value="${index}">
-        <button type="button" onclick="removeParam(${index})">${t('button_remove') || '削除'}</button>
+        <button type="button" data-action="remove-param" data-index="${index}">${t('button_remove') || '削除'}</button>
     `;
     
     container.appendChild(row);
@@ -81,7 +81,7 @@ function renderParams() {
         row.innerHTML = `
             <input type="text" placeholder="${t('capability_param_key') || 'キー'}" data-param-key="${index}" value="${param.key}">
             <input type="text" placeholder="${t('capability_param_value') || '値'}" data-param-value="${index}" value="${param.value}">
-            <button type="button" onclick="removeParam(${index})">${t('button_remove') || '削除'}</button>
+            <button type="button" data-action="remove-param" data-index="${index}">${t('button_remove') || '削除'}</button>
         `;
         container.appendChild(row);
     });
@@ -122,20 +122,11 @@ document.getElementById('capability-form').addEventListener('submit', async (e) 
     };
     
     try {
-        const response = await fetch(`/api/mcp-templates/${TEMPLATE_ID}/capabilities`, {
+        await AppApi.request(`/api/mcp-templates/${TEMPLATE_ID}/capabilities`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
             body: JSON.stringify(formData)
         });
-        
-        if (response.ok) {
-            const capability = await response.json();
-            window.location.href = `/mcp-templates/${TEMPLATE_ID}/capabilities?message=${encodeURIComponent(t('capability_registered'))}`;        } else {
-            const error = await response.json();
-            await modal.error(t('capability_register_failed') + ': ' + (error.error || t('error_unknown')));
-        }
+        window.location.href = `/mcp-templates/${TEMPLATE_ID}/capabilities?message=${encodeURIComponent(t('capability_registered'))}`;
     } catch (e) {
         await modal.error(t('capability_register_failed') + ': ' + e.message);
     }
@@ -144,6 +135,17 @@ document.getElementById('capability-form').addEventListener('submit', async (e) 
 // Initialize
 (async () => {
     await initLanguageSwitcher();
+
+    document.addEventListener('click', (event) => {
+        const actionElement = event.target.closest('[data-action]');
+        if (!actionElement) return;
+        const index = Number(actionElement.dataset.index);
+        if (actionElement.dataset.action === 'remove-header') removeHeader(index);
+        if (actionElement.dataset.action === 'remove-param') removeParam(index);
+        if (actionElement.dataset.action === 'add-header') addHeader();
+        if (actionElement.dataset.action === 'add-param') addParam();
+        if (actionElement.dataset.action === 'back') window.history.back();
+    });
     
     // Handle capability type change to show/hide template content section
     const capabilityTypeSelect = document.getElementById('capability_type');

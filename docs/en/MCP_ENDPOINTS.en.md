@@ -6,11 +6,12 @@ This document explains the detailed usage of each MCP server endpoint.
 
 ## Overview
 
-This MCP server provides 3 main endpoints:
+This MCP server provides 2 main endpoints:
 
 1. **GET /mcp** - Get Capabilities list
 2. **POST /mcp** - Process MCP protocol requests
-3. **POST /tools/<tool_id>** - Direct Tool execution
+
+Tools are executed with `tools/call` on `POST /mcp`. The legacy endpoints `POST /tools/<tool_id>` and `POST /mcp/<subdomain>` have been removed.
 
 All endpoints support subdomain-based routing.
 The URLs below are for **Docker Compose (via Caddy, `https://`, no port number)**. If you
@@ -109,8 +110,9 @@ curl -k -H "Authorization: Bearer abc123..." \
 
 1. Identify service from subdomain
 2. Identify account from Bearer token
-3. Return only Capabilities the account has permission for
-4. Each Capability's InputSchema is auto-generated from registered Body parameters
+3. Return only enabled Tools the account has permission for (same result as `tools/list`)
+4. Each Tool's InputSchema is auto-generated from registered Body parameters
+5. Internal settings such as URLs and headers are not returned
 
 ---
 
@@ -118,12 +120,42 @@ curl -k -H "Authorization: Bearer abc123..." \
 
 Process requests according to the standard MCP protocol.
 
+With the `2026-07-28` protocol, clients can send stateless requests without an `initialize`
+handshake or `Mcp-Session-Id` header. Use `server/discover` to check the supported protocol
+versions. The `2024-11-05` initialize-and-session flow remains supported for backward compatibility.
+
 ### Supported Methods
 
+- `server/discover` - Get supported protocol versions
+- `initialize` - Initialize a session for legacy clients
 - `tools/list` - Get Tool list (equivalent to GET /mcp)
 - `tools/call` - Execute Tool
 
-### 2.1 tools/list
+### 2.1 server/discover
+
+#### Request
+
+```bash
+curl -k -X POST \
+  -H "Authorization: Bearer abc123..." \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"server/discover"}' \
+  https://myservice.lvh.me/mcp
+```
+
+#### Response
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "protocolVersions": ["2026-07-28", "2024-11-05"]
+  }
+}
+```
+
+### 2.2 tools/list
 
 #### Request
 
@@ -164,7 +196,7 @@ curl -k -X POST \
 }
 ```
 
-### 2.2 tools/call
+### 2.3 tools/call
 
 #### Request
 
@@ -210,71 +242,8 @@ curl -k -X POST \
   "jsonrpc": "2.0",
   "id": 2,
   "error": {
-    "code": -32603,
-    "message": "Permission denied for tool: get_weather"
-  }
-}
-```
-
----
-
-## 3. POST /tools/<tool_id> - Direct Tool Execution
-
-Simple endpoint to execute a Tool by directly specifying its ID.
-
-### Request
-
-```bash
-curl -k -X POST \
-  -H "Authorization: Bearer abc123..." \
-  -H "Content-Type: application/json" \
-  -d '{
-    "arguments": {
-      "city": "Tokyo"
-    }
-  }' \
-  https://myservice.lvh.me/tools/get_weather
-```
-
-### Tool ID Specification Methods
-
-- **Capability Name** (recommended): `get_weather`
-- **Capability ID**: `1`, `2`, `3`, etc.
-
-### Response (Success)
-
-```json
-{
-  "content": [
-    {
-      "type": "text",
-      "text": "{\"success\": true, \"data\": {\"temperature\": 25}}"
-    }
-  ],
-  "isError": false
-}
-```
-
-### Response (Permission Error)
-
-```json
-{
-  "jsonrpc": "2.0",
-  "error": {
     "code": -32000,
     "message": "Permission denied for tool: get_weather"
-  }
-}
-```
-
-### Response (Tool Not Found)
-
-```json
-{
-  "jsonrpc": "2.0",
-  "error": {
-    "code": -32602,
-    "message": "Tool not found: invalid_tool"
   }
 }
 ```
@@ -349,11 +318,16 @@ response = requests.get(
 capabilities = response.json()
 print(capabilities)
 
-# Execute Tool
+# Execute Tool (MCP protocol tools/call)
 response = requests.post(
-    'https://myservice.lvh.me/tools/get_weather',
+    'https://myservice.lvh.me/mcp',
     headers=headers,
-    json={'arguments': {'city': 'Tokyo'}}
+    json={
+        'jsonrpc': '2.0',
+        'id': 1,
+        'method': 'tools/call',
+        'params': {'name': 'get_weather', 'arguments': {'city': 'Tokyo'}},
+    }
 )
 result = response.json()
 print(result)
@@ -366,14 +340,7 @@ print(result)
 curl -k -H "Authorization: Bearer YOUR_TOKEN" \
   https://myservice.lvh.me/mcp
 
-# 2. Execute specific Tool
-curl -k -X POST \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"arguments": {"city": "Tokyo"}}' \
-  https://myservice.lvh.me/tools/get_weather
-
-# 3. Execute Tool via MCP protocol
+# 2. Execute Tool via MCP protocol
 curl -k -X POST \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
@@ -407,27 +374,6 @@ curl -k -X POST \
 5. Get Capabilities with permissions by account ID and Service ID
    ↓
 6. Format and return Capability list
-```
-
-### POST /tools/<tool_id>
-
-```
-1. Receive request
-   ↓
-2. Extract subdomain
-   ↓
-3. Verify Bearer token
-   ↓
-4. Search for Service by subdomain
-   ↓
-5. Search for Capability by tool_id (name or ID)
-   ↓
-6. Check account permissions
-   ↓
-7. With permission → Execute Capability (API/MCP relay)
-   Without permission → Error response
-   ↓
-8. Return result
 ```
 
 ### POST /mcp (tools/call)

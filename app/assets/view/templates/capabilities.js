@@ -16,8 +16,7 @@ function showFlashMessage(message) {
 
 async function loadTemplate() {
     try {
-        const response = await fetch(`/api/mcp-templates/${TEMPLATE_ID}`);
-        template = await response.json();
+        template = await AppApi.request(`/api/mcp-templates/${TEMPLATE_ID}`);
         
         document.getElementById('breadcrumb-template').textContent = template.name;
         document.getElementById('page-title').textContent = `${template.name} - Capabilities`;
@@ -59,19 +58,19 @@ async function loadCapabilities() {
     }
     
     container.innerHTML = template.capabilities.map(cap => `
-        <div class="capability-card" onclick="viewCapability(${cap.id})">
+        <div class="capability-card" data-capability-id="${Number(cap.id)}">
             <div class="capability-header">
                 <div class="capability-info">
-                    <div class="capability-name">${cap.name}</div>
-                    <span class="capability-type ${cap.capability_type}">${cap.capability_type}</span>
+                    <div class="capability-name">${AppDom.escapeHtml(cap.name)}</div>
+                    <span class="capability-type ${AppDom.escapeHtml(cap.capability_type)}">${AppDom.escapeHtml(cap.capability_type)}</span>
                 </div>
                 <div class="capability-actions">
-                    ${!isBuiltin ? `<button class="btn-small btn-secondary" onclick="editCapability(${cap.id}, event)" data-i18n="button_edit">${t('button_edit')}</button>` : ''}
-                    ${!isBuiltin ? `<button class="btn-small btn-delete" onclick="deleteCapability(${cap.id}, event)" data-i18n="button_delete">${t('button_delete')}</button>` : ''}
+                    ${!isBuiltin ? `<button type="button" class="btn-small btn-secondary" data-action="edit-capability" data-i18n="button_edit">${t('button_edit')}</button>` : ''}
+                    ${!isBuiltin ? `<button type="button" class="btn-delete" data-action="delete-capability" data-i18n="button_delete">${t('button_delete')}</button>` : ''}
                 </div>
             </div>
-            ${cap.url ? `<div class="capability-url">${cap.url}</div>` : ''}
-            ${cap.description ? `<div class="capability-description">${cap.description}</div>` : ''}
+            ${cap.url ? `<div class="capability-url">${AppDom.escapeHtml(cap.url)}</div>` : ''}
+            ${cap.description ? `<div class="capability-description">${AppDom.escapeHtml(cap.description)}</div>` : ''}
         </div>
     `).join('');
 }
@@ -92,18 +91,11 @@ async function deleteCapability(capabilityId, event) {
     if (!confirmed) return;
     
     try {
-        const response = await fetch(`/api/template-capabilities/${capabilityId}`, {
+        await AppApi.request(`/api/template-capabilities/${capabilityId}`, {
             method: 'DELETE'
         });
-        
-        if (response.ok) {
-            showFlashMessage('削除しました');
-            // Reload template data
-            await loadTemplate();
-        } else {
-            const error = await response.json();
-            await modal.error(t('common_error') + ': ' + (error.error || t('error_unknown')));
-        }
+        showFlashMessage('削除しました');
+        await loadTemplate();
     } catch (e) {
         await modal.error(t('common_error') + ': ' + e.message);
     }
@@ -112,7 +104,20 @@ async function deleteCapability(capabilityId, event) {
 // Initialize
 (async () => {
     await initLanguageSwitcher();
+    document.addEventListener('click', (event) => {
+        if (event.target.closest('[data-action="back"]')) window.history.back();
+    });
     await loadTemplate();
+
+    document.addEventListener('click', (event) => {
+        const actionElement = event.target.closest('[data-action]');
+        const card = actionElement?.closest('[data-capability-id]');
+        if (!card) return;
+        const capabilityId = card.dataset.capabilityId;
+        if (actionElement.dataset.action === 'edit-capability') editCapability(capabilityId, event);
+        if (actionElement.dataset.action === 'delete-capability') deleteCapability(capabilityId, event);
+        if (!actionElement) viewCapability(capabilityId);
+    });
     
     // Check for flash message in URL params
     const urlParams = new URLSearchParams(window.location.search);

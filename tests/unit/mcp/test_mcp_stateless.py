@@ -10,10 +10,7 @@ Covers:
 
 import json
 
-import pytest
-
 from app.models.models import Capability, McpService, Service
-
 
 # ---------------------------------------------------------------------------
 # Helpers / shared fixtures

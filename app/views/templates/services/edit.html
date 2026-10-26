@@ -79,7 +79,7 @@
                             <small id="mcp-url-hint" data-i18n="app_mcp_url_hint">MCPサーバーのSSEエンドポイントURLを入力してください</small>
                             <small id="mcp-url-readonly-hint" style="color: #6b7280; margin-top: 4px; display: none;" data-i18n="app_mcp_url_readonly_hint">MCP接続URLは登録後に変更できません</small>
                         </div>
-                        <button type="button" id="test-connection-btn" onclick="testConnection()" class="btn btn-secondary" data-i18n="app_test_connection">接続テスト</button>
+                        <button type="button" id="test-connection-btn" data-action="test-connection" class="btn btn-secondary" data-i18n="app_test_connection">接続テスト</button>
                     </div>
                     <div id="connection-test-result" style="display: none; margin-top: 10px;"></div>
                 </div>
@@ -121,7 +121,7 @@
                 </div>
                 
                 <div style="display: flex; gap: 10px; margin-top: 10px;">
-                    <button type="button" id="test-stdio-btn" onclick="testStdioConnection()" class="btn btn-secondary" data-i18n="app_test_connection">接続テスト</button>
+                    <button type="button" id="test-stdio-btn" data-action="test-stdio" class="btn btn-secondary" data-i18n="app_test_connection">接続テスト</button>
                 </div>
                 <div id="stdio-test-result" style="display: none; margin-top: 10px;"></div>
                 <small style="color: #6b7280; margin-top: 8px; display: block;" data-i18n="app_stdio_readonly_hint">stdio設定は登録後に変更できません</small>
@@ -137,7 +137,7 @@
                     </span>
                 </label>
                 <div id="headers-container"></div>
-                <button type="button" onclick="addHeaderRow()" class="btn btn-sm btn-secondary" style="margin-top: 10px;" data-i18n="button_add_header">+ ヘッダーを追加</button>
+                <button type="button" data-action="add-header" class="btn btn-sm btn-secondary" style="margin-top: 10px;" data-i18n="button_add_header">+ ヘッダーを追加</button>
                 <small data-i18n="app_common_headers_hint">全てのCapabilityで使用される共通ヘッダー</small>
                 <small id="common-headers-readonly-hint" style="color: #6b7280; margin-top: 4px; display: none;" data-i18n="app_common_headers_readonly_hint">共通ヘッダーは登録後に変更できません</small>
             </div>
@@ -173,10 +173,10 @@
         </div>
         
         <div style="display: flex; flex-direction: column; gap: 10px; align-self: center;">
-            <button onclick="moveToEnabled()" type="button" class="btn btn-primary" title="選択したアカウントを接続可能にする">←</button>
-            <button onclick="moveAllToEnabled()" type="button" class="btn btn-primary" title="全てのアカウントを接続可能にする">←←</button>
-            <button onclick="moveToDisabled()" type="button" class="btn btn-secondary" title="選択したアカウントの接続を解除">→</button>
-            <button onclick="moveAllToDisabled()" type="button" class="btn btn-secondary" title="全てのアカウントの接続を解除">→→</button>
+            <button type="button" data-action="move-enabled" class="btn btn-primary" title="選択したアカウントを接続可能にする">←</button>
+            <button type="button" data-action="move-all-enabled" class="btn btn-primary" title="全てのアカウントを接続可能にする">←←</button>
+            <button type="button" data-action="move-disabled" class="btn btn-secondary" title="選択したアカウントの接続を解除">→</button>
+            <button type="button" data-action="move-all-disabled" class="btn btn-secondary" title="全てのアカウントの接続を解除">→→</button>
         </div>
         
         <div style="flex: 1;">

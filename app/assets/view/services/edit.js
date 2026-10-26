@@ -1,7 +1,7 @@
 // services/edit.js - Service Edit Page
 const pathParts = window.location.pathname.split('/');
-const mcpServiceId = parseInt(pathParts[2]); // /mcp-services/{id}/apps/{app_id}/edit
-const serviceId = parseInt(pathParts[4]);
+const mcpServiceId = Number.parseInt(pathParts[2], 10); // /mcp-services/{id}/apps/{app_id}/edit
+const serviceId = Number.parseInt(pathParts[4], 10);
 let headerIndex = 0;
 let currentAccessControl = 'public'; // デフォルトはpublic（制限なし）
 let currentServiceType = 'api'; // Current service type (readonly after creation)
@@ -56,7 +56,7 @@ function addHeaderRow(key = '', value = '') {
                style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
         <input type="text" placeholder="${t('form_value_placeholder')}" value="${value}" 
                style="flex: 2; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-        <button type="button" onclick="this.parentElement.remove()" class="btn btn-sm btn-danger">${t('button_delete')}</button>
+        <button type="button" data-action="remove-row" class="btn btn-sm btn-danger">${t('button_delete')}</button>
     `;
     container.appendChild(row);
     headerIndex++;
@@ -212,13 +212,13 @@ async function loadService() {
         }
         
         // Hide "Add Header" button
-        const addHeaderBtn = document.querySelector('button[onclick="addHeaderRow()"]');
+        const addHeaderBtn = document.querySelector('button[data-action="add-header"]');
         if (addHeaderBtn) {
             addHeaderBtn.style.display = 'none';
         }
         
         // Hide "Test Connection" button
-        const testBtn = document.querySelector('button[onclick="testConnection()"]');
+        const testBtn = document.querySelector('button[data-action="test-connection"]');
         if (testBtn) {
             testBtn.style.display = 'none';
         }
@@ -325,6 +325,20 @@ async function savePermissions() {
     await initLanguageSwitcher();
     await loadService();
     await loadPermissions();
+
+    document.addEventListener('click', (event) => {
+        const element = event.target.closest('[data-action]');
+        if (!element) return;
+        const action = element.dataset.action;
+        if (action === 'remove-row') element.closest('.key-value-row')?.remove();
+        if (action === 'add-header') addHeaderRow();
+        if (action === 'test-connection') testConnection();
+        if (action === 'test-stdio') testStdioConnection();
+        if (action === 'move-enabled') moveToEnabled();
+        if (action === 'move-all-enabled') moveAllToEnabled();
+        if (action === 'move-disabled') moveToDisabled();
+        if (action === 'move-all-disabled') moveAllToDisabled();
+    });
     
     // Access control toggle handler
     document.getElementById('access-control-toggle').addEventListener('change', async (e) => {

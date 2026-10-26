@@ -12,6 +12,10 @@
 
 ## E2E テストの実行方法
 
+E2E テストの接続先は `DOCKER_ENV=1` の場合 `http://web:5000`、ローカル実行時は
+`FLASK_PORT` または `PORT` を使用します。ログイン情報は `ADMIN_USERNAME` と
+`ADMIN_PASSWORD` で上書きでき、既定値は `admin` / `admin` です。
+
 ### 方法 1: 専用コンテナで実行（推奨）
 
 ```bash

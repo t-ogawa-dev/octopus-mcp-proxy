@@ -28,7 +28,7 @@ function updateRoutingHint() {
     const protocol = window.location.protocol; // http: or https:
     
     if (routingType === 'path') {
-        hintElement.innerHTML = `<span data-i18n="mcp_service_routing_hint_path">パス方式: ${protocol}//${currentHost}/${identifier}/mcp</span>`;
+        hintElement.textContent = `パス方式: ${protocol}//${currentHost}/${identifier}/mcp`;
     } else {
         // For subdomain routing
         const hostWithoutPort = currentHost.split(':')[0];
@@ -50,7 +50,7 @@ function updateRoutingHint() {
             // 2 or less parts: add prefix (e.g., auc.com -> sample.auc.com)
             subdomainHost = `${identifier}.${currentHost}`;
         }
-        hintElement.innerHTML = `<span data-i18n="mcp_service_routing_hint_subdomain">サブドメイン方式: ${protocol}//${subdomainHost}/mcp</span>`;
+        hintElement.textContent = `サブドメイン方式: ${protocol}//${subdomainHost}/mcp`;
     }
 }
 
@@ -173,6 +173,14 @@ async function savePermissions() {
     await initLanguageSwitcher();
     await loadMcpService();
     await loadPermissions();
+
+    document.addEventListener('click', (event) => {
+        const action = event.target.closest('[data-action]')?.dataset.action;
+        if (action === 'move-enabled') moveToEnabled();
+        if (action === 'move-all-enabled') moveAllToEnabled();
+        if (action === 'move-disabled') moveToDisabled();
+        if (action === 'move-all-disabled') moveAllToDisabled();
+    });
     
     // Routing type change handler
     document.getElementById('routing_type').addEventListener('change', updateRoutingHint);

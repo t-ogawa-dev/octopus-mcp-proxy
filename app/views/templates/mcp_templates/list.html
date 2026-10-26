@@ -27,7 +27,7 @@
     <button class="tab" data-tab="mcp" data-i18n="mcp_template_tab_mcp">WebService(MCP)</button>
     <button class="tab" data-tab="custom" data-i18n="mcp_template_tab_custom">カスタム</button>
     <div style="margin-left: auto;">
-        <button id="check-updates-btn" class="btn btn-secondary" onclick="checkTemplateUpdates()">
+        <button type="button" id="check-updates-btn" data-action="check-updates" class="btn btn-secondary">
             <span data-i18n="mcp_template_check_updates">テンプレート更新を確認</span>
             <span id="update-badge" class="badge badge-danger" style="display: none; margin-left: 8px;">New</span>
         </button>
@@ -44,8 +44,8 @@
 
 <div class="tab-content" id="custom-tab" style="display: none;">
     <div style="margin-bottom: 20px; display: flex; gap: 10px;">
-        <button onclick="window.location.href='/mcp-templates/new'" class="btn btn-primary" data-i18n="mcp_template_new_button">新規カスタムテンプレート</button>
-        <button onclick="openImportModal()" class="btn btn-secondary" data-i18n="mcp_template_import_button">インポート</button>
+        <a href="/mcp-templates/new" class="btn btn-primary" data-i18n="mcp_template_new_button">新規カスタムテンプレート</a>
+        <button type="button" data-action="open-import" class="btn btn-secondary" data-i18n="mcp_template_import_button">インポート</button>
     </div>
     <div id="custom-templates" class="templates-grid"></div>
 </div>
@@ -55,7 +55,7 @@
     <div class="custom-modal-content">
         <div class="custom-modal-header">
             <h3 id="modal-title" data-i18n="mcp_template_use_modal_title">テンプレートを使用</h3>
-            <span class="modal-close" onclick="closeModal()">&times;</span>
+            <button type="button" class="modal-close" data-action="close-use-modal" aria-label="閉じる">&times;</button>
         </div>
         <div class="custom-modal-body">
             <p id="modal-description" data-i18n="mcp_template_use_modal_description">このテンプレートからアプリを作成します。登録するMCPサービスを選択してください。</p>
@@ -69,8 +69,8 @@
             </div>
         </div>
         <div class="custom-modal-footer">
-            <button class="btn btn-secondary" onclick="closeModal()" data-i18n="button_cancel">キャンセル</button>
-            <button class="btn btn-primary" onclick="confirmTemplateUse()" data-i18n="button_register">登録</button>
+            <button type="button" class="btn btn-secondary" data-action="close-use-modal" data-i18n="button_cancel">キャンセル</button>
+            <button type="button" class="btn btn-primary" data-action="confirm-template-use" data-i18n="button_register">登録</button>
         </div>
     </div>
 </div>
@@ -88,8 +88,8 @@
             </div>
         </div>
         <div class="custom-modal-footer">
-            <button class="btn btn-secondary" onclick="closeSuccessModal()" data-i18n="button_close">閉じる</button>
-            <button class="btn btn-primary" onclick="goToAppDetail()" data-i18n="mcp_template_use_go_to_app">アプリ詳細へ</button>
+            <button type="button" class="btn btn-secondary" data-action="close-success-modal" data-i18n="button_close">閉じる</button>
+            <button type="button" class="btn btn-primary" data-action="go-to-app" data-i18n="mcp_template_use_go_to_app">アプリ詳細へ</button>
         </div>
     </div>
 </div>
@@ -99,7 +99,7 @@
     <div class="custom-modal-content">
         <div class="custom-modal-header">
             <h3 data-i18n="mcp_template_import_title">テンプレートをインポート</h3>
-            <span class="modal-close" onclick="closeImportModal()">&times;</span>
+            <button type="button" class="modal-close" data-action="close-import" aria-label="閉じる">&times;</button>
         </div>
         <div class="custom-modal-body">
             <p data-i18n="mcp_template_import_description">エクスポートしたJSONファイルをドラッグ&ドロップまたは選択してください</p>
@@ -109,19 +109,19 @@
                     <div class="drop-zone-icon">📁</div>
                     <p data-i18n="mcp_template_import_drop_hint">ここにJSONファイルをドロップ</p>
                     <p class="drop-zone-or" data-i18n="mcp_template_import_or">または</p>
-                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('file-input').click()" data-i18n="mcp_template_import_select_file">ファイルを選択</button>
+                    <button type="button" class="btn btn-secondary" data-action="select-file" data-i18n="mcp_template_import_select_file">ファイルを選択</button>
                     <input type="file" id="file-input" accept=".yaml,.yml" style="display: none;">
                 </div>
                 <div id="file-info" class="file-info" style="display: none;">
                     <div class="file-info-icon">✓</div>
                     <div class="file-info-name"></div>
-                    <button type="button" class="btn-small btn-secondary" onclick="clearFile()" data-i18n="button_clear">クリア</button>
+                    <button type="button" class="btn-small btn-secondary" data-action="clear-file" data-i18n="button_clear">クリア</button>
                 </div>
             </div>
         </div>
         <div class="custom-modal-footer">
-            <button class="btn btn-secondary" onclick="closeImportModal()" data-i18n="button_cancel">キャンセル</button>
-            <button class="btn btn-primary" onclick="confirmImport()" id="import-btn" disabled data-i18n="mcp_template_import_button">インポート</button>
+            <button type="button" class="btn btn-secondary" data-action="close-import" data-i18n="button_cancel">キャンセル</button>
+            <button type="button" class="btn btn-primary" data-action="confirm-import" id="import-btn" disabled data-i18n="mcp_template_import_button">インポート</button>
         </div>
     </div>
 </div>
@@ -131,7 +131,7 @@
     <div class="custom-modal-content">
         <div class="custom-modal-header">
             <h3 data-i18n="mcp_template_update_title">テンプレート更新</h3>
-            <span class="modal-close" onclick="closeUpdateModal()">&times;</span>
+            <button type="button" class="modal-close" data-action="close-update" aria-label="閉じる">&times;</button>
         </div>
         <div class="custom-modal-body">
             <div id="update-check-content">
@@ -154,8 +154,8 @@
             </div>
         </div>
         <div class="custom-modal-footer">
-            <button class="btn btn-secondary" onclick="closeUpdateModal()" data-i18n="button_cancel">キャンセル</button>
-            <button id="sync-btn" class="btn btn-primary" onclick="syncTemplates()" data-i18n="mcp_template_sync_button">同期する</button>
+            <button type="button" class="btn btn-secondary" data-action="close-update" data-i18n="button_cancel">キャンセル</button>
+            <button type="button" id="sync-btn" data-action="sync-templates" class="btn btn-primary" data-i18n="mcp_template_sync_button">同期する</button>
         </div>
     </div>
 </div>

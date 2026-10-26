@@ -1,16 +1,15 @@
 // admin_users/detail.js - Admin User Detail/Edit Page
-const adminUserId = parseInt(window.location.pathname.split('/')[2]);
+const adminUserId = Number.parseInt(window.location.pathname.split('/')[2], 10);
 
 async function loadAdminUser() {
-    const response = await fetch(`/api/admin-users/${adminUserId}`);
-    const user = await response.json();
+    const user = await AppApi.request(`/api/admin-users/${adminUserId}`);
 
     document.getElementById('username').value = user.username;
 
     const container = document.getElementById('admin-user-detail');
     container.innerHTML = `
         <div class="detail-section">
-            <h2>${user.username}</h2>
+            <h2>${AppDom.escapeHtml(user.username)}</h2>
             ${!user.is_initialized ? `<p class="text-muted">${t('admin_user_pending_change_desc')}</p>` : ''}
         </div>
         <div class="detail-section">
@@ -32,12 +31,11 @@ async function deleteAdminUserSelf() {
     const confirmed = await modal.confirmDelete(t('admin_user_delete_confirm'));
     if (!confirmed) return;
 
-    const response = await fetch(`/api/admin-users/${adminUserId}`, { method: 'DELETE' });
-    if (response.ok) {
+    try {
+        await AppApi.request(`/api/admin-users/${adminUserId}`, { method: 'DELETE' });
         window.location.href = '/admin-users';
-    } else {
-        const error = await response.json().catch(() => ({}));
-        await modal.error(error.error || t('admin_user_delete_failed'));
+    } catch (error) {
+        await modal.error(error.message || t('admin_user_delete_failed'));
     }
 }
 
@@ -59,19 +57,17 @@ async function deleteAdminUserSelf() {
             data.password = password;
         }
 
-        const response = await fetch(`/api/admin-users/${adminUserId}`, {
+        try {
+            await AppApi.request(`/api/admin-users/${adminUserId}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
-        });
+            });
 
-        if (response.ok) {
             await modal.success(t('admin_user_update_success'));
             document.getElementById('password').value = '';
-            loadAdminUser();
-        } else {
-            const error = await response.json();
-            await modal.error(t('admin_user_update_failed') + ': ' + (error.error || t('error_unknown')));
+            await loadAdminUser();
+        } catch (error) {
+            await modal.error(t('admin_user_update_failed') + ': ' + error.message);
         }
     });
 

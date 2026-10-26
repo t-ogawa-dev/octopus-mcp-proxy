@@ -59,13 +59,13 @@
         <div class="form-section">
             <h2 data-i18n="capability_headers_label">ヘッダー</h2>
             <div id="headers-container"></div>
-            <button type="button" class="btn btn-secondary" onclick="addHeader()" data-i18n="button_add_header">+ ヘッダーを追加</button>
+            <button type="button" class="btn btn-secondary" data-action="add-header" data-i18n="button_add_header">+ ヘッダーを追加</button>
         </div>
 
         <div class="form-section">
             <h2 data-i18n="capability_body_params_label">ボディパラメータ</h2>
             <div id="params-container"></div>
-            <button type="button" class="btn btn-secondary" onclick="addParam()" data-i18n="button_add_param">+ パラメータを追加</button>
+            <button type="button" class="btn btn-secondary" data-action="add-param" data-i18n="button_add_param">+ パラメータを追加</button>
         </div>
 
         <div class="form-section" id="template-section">
@@ -76,7 +76,7 @@
         </div>
 
         <div class="form-actions">
-            <button type="button" class="btn btn-secondary" onclick="window.history.back()" data-i18n="button_cancel">キャンセル</button>
+            <button type="button" class="btn btn-secondary" data-action="back" data-i18n="button_cancel">キャンセル</button>
             <button type="submit" class="btn btn-primary" data-i18n="button_register">登録</button>
         </div>
     </form>

@@ -6,13 +6,11 @@ let template = null;
 async function loadCapability() {
     try {
         // Load template first
-        const templateResponse = await fetch(`/api/mcp-templates/${TEMPLATE_ID}`);
-        template = await templateResponse.json();
+        template = await AppApi.request(`/api/mcp-templates/${TEMPLATE_ID}`);
         document.getElementById('breadcrumb-template').textContent = template.name;
         
         // Load capability
-        const response = await fetch(`/api/template-capabilities/${CAPABILITY_ID}`);
-        capability = await response.json();
+        capability = await AppApi.request(`/api/template-capabilities/${CAPABILITY_ID}`);
         
         // Update page
         document.getElementById('capability-name').textContent = capability.name;
@@ -37,8 +35,8 @@ async function loadCapability() {
         } else {
             headersContainer.innerHTML = Object.entries(headers).map(([key, value]) => `
                 <div class="header-item">
-                    <span class="header-key">${key}</span>
-                    <span class="header-value">${value}</span>
+                    <span class="header-key">${AppDom.escapeHtml(key)}</span>
+                    <span class="header-value">${AppDom.escapeHtml(value)}</span>
                 </div>
             `).join('');
         }
@@ -56,8 +54,8 @@ async function loadCapability() {
         } else {
             paramsContainer.innerHTML = Object.entries(params).map(([key, value]) => `
                 <div class="param-item">
-                    <span class="param-key">${key}</span>
-                    <span class="param-value">${JSON.stringify(value)}</span>
+                    <span class="param-key">${AppDom.escapeHtml(key)}</span>
+                    <span class="param-value">${AppDom.escapeHtml(JSON.stringify(value))}</span>
                 </div>
             `).join('');
         }
@@ -86,16 +84,10 @@ async function deleteCapability() {
     if (!confirmed) return;
     
     try {
-        const response = await fetch(`/api/template-capabilities/${CAPABILITY_ID}`, {
+        await AppApi.request(`/api/template-capabilities/${CAPABILITY_ID}`, {
             method: 'DELETE'
         });
-        
-        if (response.ok) {
-            window.location.href = `/mcp-templates/${TEMPLATE_ID}/capabilities?message=${encodeURIComponent('削除しました')}`;
-        } else {
-            const error = await response.json();
-            await modal.error(t('common_error') + ': ' + (error.error || t('error_unknown')));
-        }
+        window.location.href = `/mcp-templates/${TEMPLATE_ID}/capabilities?message=${encodeURIComponent('削除しました')}`;
     } catch (e) {
         await modal.error(t('common_error') + ': ' + e.message);
     }
@@ -104,5 +96,10 @@ async function deleteCapability() {
 // Initialize
 (async () => {
     await initLanguageSwitcher();
+    document.addEventListener('click', (event) => {
+        const action = event.target.closest('[data-action]')?.dataset.action;
+        if (action === 'delete-capability') deleteCapability();
+        if (action === 'back') window.history.back();
+    });
     await loadCapability();
 })();

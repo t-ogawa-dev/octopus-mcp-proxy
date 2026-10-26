@@ -14,6 +14,7 @@ depend on any real upstream server.
 """
 
 import json
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -196,6 +197,31 @@ class TestApiRelay:
 
 class TestMcpHttpRelay:
     @patch("app.services.mcp_handler.httpx.post")
+    def test_mcp_relay_does_not_log_secrets_or_request_data(self, mock_post, client, db, mcp_relay_setup, caplog):
+        secret_values = ["header-secret-marker", "url-secret-marker", "session-secret-marker", "body-secret-marker"]
+        mcp_relay_setup["app"].mcp_url = f"https://upstream.example.com/mcp?token={secret_values[1]}"
+        mcp_relay_setup["app"].common_headers = json.dumps({"Authorization": f"Bearer {secret_values[0]}"})
+        db.session.commit()
+
+        init_resp = _make_json_response({"result": {}}, headers={"Mcp-Session-Id": secret_values[2]})
+        call_resp = _make_json_response(
+            {"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": secret_values[3]}]}}
+        )
+        mock_post.side_effect = [init_resp, call_resp]
+
+        with caplog.at_level(logging.DEBUG, logger="app.services.mcp_handler"):
+            response = _tools_call(
+                client,
+                "mcp-relay",
+                "mcp-relay_UpstreamMcp:remote_search",
+                {"query": "argument-secret-marker"},
+            )
+
+        assert response.status_code == 200
+        for secret_value in [*secret_values, "argument-secret-marker"]:
+            assert secret_value not in caplog.text
+
+    @patch("app.services.mcp_handler.httpx.post")
     def test_mcp_relay_tool_call_success(self, mock_post, client, db, mcp_relay_setup):
         """tools/call on an mcp_tool capability initializes a session then relays tools/call upstream."""
         # 1st POST = initialize (returns a session id), 2nd POST = tools/call
@@ -212,10 +238,9 @@ class TestMcpHttpRelay:
         assert resp.status_code == 200
         data = json.loads(resp.data)
 
-        text = data["result"]["content"][0]["text"]
-        inner = json.loads(text)
-        # The upstream JSON-RPC response is returned verbatim by _execute_mcp_call
-        assert inner["result"]["content"][0]["text"] == "relayed-result"
+        # The upstream CallToolResult is relayed as-is instead of being re-wrapped as JSON text
+        assert data["result"]["content"][0]["text"] == "relayed-result"
+        assert data["result"]["isError"] is False
 
         # initialize + tools/call = 2 upstream calls
         assert mock_post.call_count == 2
@@ -279,9 +304,7 @@ class TestMcpHttpRelay:
         assert resp.status_code == 200
         data = json.loads(resp.data)
 
-        text = data["result"]["content"][0]["text"]
-        inner = json.loads(text)
-        assert inner["result"]["content"][0]["text"] == "sse-relayed"
+        assert data["result"]["content"][0]["text"] == "sse-relayed"
         assert mock_post.call_count == 2
 
 
@@ -424,12 +447,17 @@ class TestStreamableHttp:
         payload = _parse_sse(resp)
         assert payload["result"]["sessionId"] == session_id
 
-    def test_subsequent_request_requires_valid_session(self, client, db, streamable_setup):
-        """A non-initialize Streamable HTTP request without a valid session id is rejected (400)."""
+    @pytest.mark.parametrize("accept", ["text/event-stream", "application/json"])
+    def test_subsequent_request_rejects_unknown_session(self, client, db, streamable_setup, accept):
+        """A request carrying a forged Mcp-Session-Id is rejected (400) regardless of Accept.
+
+        Requests without the header are allowed for 2026-07-28 stateless clients
+        (see test_mcp_stateless.py).
+        """
         resp = client.post(
             "/mcp?subdomain=streamable",
             data=json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}),
-            headers={"Content-Type": "application/json", "Accept": "text/event-stream"},
+            headers={"Content-Type": "application/json", "Accept": accept, "Mcp-Session-Id": "forged"},
         )
         assert resp.status_code == 400
         data = json.loads(resp.data)
@@ -607,3 +635,145 @@ class TestPathRoutingRelay:
         inner = json.loads(text)
         assert inner["success"] is True
         assert inner["data"]["echo"] == "hi"
+
+
+class TestRelayBehavior:
+    @patch("app.services.mcp_handler.httpx.post")
+    def test_mcp_relay_resolves_variables_in_headers_and_url(self, mock_post, client, db, mcp_relay_setup):
+        from app.models.models import Variable
+
+        variable = Variable(name="UPSTREAM_TOKEN", value_type="string", source_type="value")
+        variable.set_value("resolved-token")
+        db.session.add(variable)
+        mcp_relay_setup["app"].mcp_url = "https://upstream.example.com/mcp?key={{UPSTREAM_TOKEN}}"
+        mcp_relay_setup["app"].common_headers = '{"Authorization": "Bearer {{UPSTREAM_TOKEN}}"}'
+        db.session.commit()
+        mock_post.side_effect = [
+            _make_json_response({"jsonrpc": "2.0", "id": 0, "result": {}}),
+            _make_json_response({"jsonrpc": "2.0", "id": 1, "result": {"content": []}}),
+        ]
+
+        _tools_call(client, "mcp-relay", "mcp-relay_UpstreamMcp:remote_search", {"query": "q"})
+
+        for call in mock_post.call_args_list:
+            assert call.args[0] == "https://upstream.example.com/mcp?key=resolved-token"
+            assert call.kwargs["headers"]["Authorization"] == "Bearer resolved-token"
+
+    @patch("app.services.mcp_handler.httpx.post")
+    def test_upstream_jsonrpc_error_is_reported_as_tool_error(self, mock_post, client, db, mcp_relay_setup):
+        mock_post.side_effect = [
+            _make_json_response({"jsonrpc": "2.0", "id": 0, "result": {}}),
+            _make_json_response({"jsonrpc": "2.0", "id": 1, "error": {"code": -32602, "message": "bad args"}}),
+        ]
+
+        resp = _tools_call(client, "mcp-relay", "mcp-relay_UpstreamMcp:remote_search", {"query": "q"})
+
+        result = json.loads(resp.data)["result"]
+        assert result["isError"] is True
+        assert result["content"][0]["text"] == "bad args"
+
+    @patch("app.services.mcp_handler.httpx.post")
+    def test_upstream_transport_failure_is_reported_as_tool_error(self, mock_post, client, db, mcp_relay_setup):
+        mock_post.side_effect = ConnectionError("upstream down")
+
+        resp = _tools_call(client, "mcp-relay", "mcp-relay_UpstreamMcp:remote_search", {"query": "q"})
+
+        assert json.loads(resp.data)["result"]["isError"] is True
+
+    def test_stdio_call_times_out(self, db, mcp_relay_setup):
+        import asyncio
+
+        from app.services.mcp_handler import MCPHandler
+
+        app = mcp_relay_setup["app"]
+        app.mcp_transport = "stdio"
+        app.stdio_command = "fake-server"
+        cap = mcp_relay_setup["cap"]
+        cap.timeout_seconds = 0.05
+        db.session.commit()
+
+        async def hang(*_args, **_kwargs):
+            await asyncio.sleep(10)
+
+        with patch.object(MCPHandler, "_async_stdio_mcp_call", hang):
+            result = MCPHandler(db)._execute_stdio_mcp_call(app, cap, {})
+
+        assert result["success"] is False
+        assert "timed out" in result["error"]
+
+
+class TestInvalidRequests:
+    def test_batch_request_is_rejected(self, client, db, mcp_relay_setup):
+        resp = client.post(
+            "/mcp?subdomain=mcp-relay",
+            data=json.dumps([{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}]),
+            headers={"Content-Type": "application/json"},
+        )
+
+        assert resp.status_code == 400
+        assert json.loads(resp.data)["error"]["code"] == -32600
+
+    def test_non_string_method_is_rejected(self, client, db, mcp_relay_setup):
+        resp = client.post(
+            "/mcp?subdomain=mcp-relay",
+            data=json.dumps({"jsonrpc": "2.0", "id": 7, "method": None}),
+            headers={"Content-Type": "application/json"},
+        )
+
+        assert resp.status_code == 400
+        body = json.loads(resp.data)
+        assert body["error"]["code"] == -32600
+        assert body["id"] == 7
+
+    def test_log_entry_without_method_is_stored_as_unknown(self, app, db):
+        """Malformed JSON leaves mcp_method as None; the log row must still be written."""
+        from app.models.models import McpConnectionLog
+        from app.services.mcp_logger import _write_log_entry
+
+        _write_log_entry(app, {"mcp_method": None, "status_code": 400, "is_success": False})
+
+        assert McpConnectionLog.query.filter_by(mcp_method="unknown").count() == 1
+
+
+class TestApiCallBehavior:
+    @patch("app.services.mcp_handler.httpx.post")
+    def test_const_params_win_over_arguments(self, mock_post, client, db, api_relay_setup):
+        api_relay_setup["cap"].body_params = json.dumps(
+            {"properties": {"city": {"type": "string"}, "units": {"type": "string", "const": "metric"}}}
+        )
+        db.session.commit()
+        mock_post.return_value = _make_json_response({"ok": True})
+
+        _tools_call(client, "api-relay", "api-relay_WeatherApp:get_weather", {"city": "Osaka", "units": "imperial"})
+
+        assert mock_post.call_args.kwargs["json"] == {"units": "metric", "city": "Osaka"}
+
+    @patch("app.services.mcp_handler.httpx.post")
+    def test_broken_body_params_still_sends_arguments(self, mock_post, client, db, api_relay_setup):
+        api_relay_setup["cap"].body_params = "{not json"
+        db.session.commit()
+        mock_post.return_value = _make_json_response({"ok": True})
+
+        _tools_call(client, "api-relay", "api-relay_WeatherApp:get_weather", {"city": "Osaka"})
+
+        assert mock_post.call_args.kwargs["json"] == {"city": "Osaka"}
+
+    @patch("app.services.mcp_handler.httpx.post")
+    def test_error_details_do_not_contain_resolved_secrets(self, mock_post, client, db, api_relay_setup):
+        import httpx
+
+        from app.models.models import Variable
+
+        variable = Variable(name="WEATHER_KEY", value_type="string", source_type="value")
+        variable.set_value("resolved-secret-123")
+        db.session.add(variable)
+        api_relay_setup["cap"].url = "https://api.example.com/weather?key={{WEATHER_KEY}}"
+        db.session.commit()
+        mock_post.side_effect = httpx.TimeoutException("timed out")
+
+        resp = _tools_call(client, "api-relay", "api-relay_WeatherApp:get_weather", {"city": "Osaka"})
+
+        assert mock_post.call_args.args[0] == "https://api.example.com/weather?key=resolved-secret-123"
+        body = resp.get_data(as_text=True)
+        assert "resolved-secret-123" not in body
+        assert json.loads(resp.data)["result"]["isError"] is True

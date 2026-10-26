@@ -7,15 +7,18 @@ import re
 import pytest
 from playwright.sync_api import Page, expect
 
+from tests.e2e.helpers import admin_credentials, e2e_url
+
 
 @pytest.fixture(autouse=True)
 def login(page: Page):
     """各テスト前に自動ログイン"""
-    page.goto("http://localhost:5000/login")
-    page.fill('input[name="username"]', "admin")
-    page.fill('input[name="password"]', "admin123")
+    username, password = admin_credentials()
+    page.goto(e2e_url("/login"))
+    page.fill('input[name="username"]', username)
+    page.fill('input[name="password"]', password)
     page.click('button[type="submit"]')
-    page.wait_for_url("http://localhost:5000/")
+    page.wait_for_url(e2e_url("/dashboard"))
 
 
 class TestAccountListPage:
@@ -23,25 +26,25 @@ class TestAccountListPage:
 
     def test_account_list_loads(self, page: Page):
         """アカウント一覧ページが読み込まれる"""
-        page.goto("http://localhost:5000/accounts")
+        page.goto(e2e_url("/accounts"))
 
-        expect(page).to_have_url("http://localhost:5000/accounts")
+        expect(page).to_have_url(e2e_url("/accounts"))
 
     def test_navigate_to_new_account(self, page: Page):
         """新規アカウント登録画面に遷移できる"""
-        page.goto("http://localhost:5000/accounts")
+        page.goto(e2e_url("/accounts"))
 
         page.click('a[href="/accounts/new"]')
-        expect(page).to_have_url("http://localhost:5000/accounts/new")
+        expect(page).to_have_url(e2e_url("/accounts/new"))
 
     def test_navigate_to_account_detail(self, page: Page):
         """アカウント詳細画面に遷移できる"""
-        page.goto("http://localhost:5000/accounts")
+        page.goto(e2e_url("/accounts"))
 
         # Click first account if exists
         if page.locator(".account-card:first-of-type a, .list-item:first-of-type a").count() > 0:
             page.click(".account-card:first-of-type a, .list-item:first-of-type a")
-            expect(page.url).to_contain("/accounts/")
+            assert "/accounts/" in page.url
 
 
 class TestAccountNewPage:
@@ -49,18 +52,18 @@ class TestAccountNewPage:
 
     def test_new_account_page_loads(self, page: Page):
         """新規アカウント登録ページが読み込まれる"""
-        page.goto("http://localhost:5000/accounts/new")
+        page.goto(e2e_url("/accounts/new"))
 
-        expect(page).to_have_url("http://localhost:5000/accounts/new")
-        expect(page.locator('input[name="name"]')).to_be_visible()
+        expect(page).to_have_url(e2e_url("/accounts/new"))
+        expect(page.locator('input[name="username"]')).to_be_visible()
 
     def test_create_account(self, page: Page):
         """新規アカウントを作成できる"""
-        page.goto("http://localhost:5000/accounts/new")
+        page.goto(e2e_url("/accounts/new"))
 
         # Fill account form
-        page.fill('input[name="name"]', f"E2E Test Account {page.context.browser.version[:5]}")
-        page.fill('textarea[name="description"]', "E2E test account description")
+        page.fill('input[name="username"]', f"E2E Test Account {page.context.browser.version[:5]}")
+        page.fill('textarea[name="notes"]', "E2E test account notes")
 
         # Submit
         page.click('button[type="submit"]')
@@ -74,16 +77,16 @@ class TestAccountDetailPage:
 
     def test_account_detail_loads(self, page: Page):
         """アカウント詳細ページが読み込まれる"""
-        page.goto("http://localhost:5000/accounts")
+        page.goto(e2e_url("/accounts"))
 
         # Click first account
         if page.locator(".account-card:first-of-type a, .list-item:first-of-type a").count() > 0:
             page.click(".account-card:first-of-type a, .list-item:first-of-type a")
-            expect(page.url).to_contain("/accounts/")
+            assert "/accounts/" in page.url
 
     def test_copy_bearer_token(self, page: Page):
         """Bearerトークンをコピーできる"""
-        page.goto("http://localhost:5000/accounts")
+        page.goto(e2e_url("/accounts"))
 
         # Click first account
         if page.locator(".account-card:first-of-type a, .list-item:first-of-type a").count() > 0:
@@ -98,7 +101,7 @@ class TestAccountDetailPage:
 
     def test_navigate_to_edit(self, page: Page):
         """編集画面に遷移できる"""
-        page.goto("http://localhost:5000/accounts")
+        page.goto(e2e_url("/accounts"))
 
         # Click first account
         if page.locator(".account-card:first-of-type a, .list-item:first-of-type a").count() > 0:
@@ -107,7 +110,7 @@ class TestAccountDetailPage:
             # Click edit button
             if page.locator('a:has-text("編集")').count() > 0:
                 page.click('a:has-text("編集")')
-                expect(page.url).to_contain("/edit")
+                assert "/edit" in page.url
 
 
 class TestAccountEditPage:
@@ -115,7 +118,7 @@ class TestAccountEditPage:
 
     def test_edit_account(self, page: Page):
         """アカウントを編集できる"""
-        page.goto("http://localhost:5000/accounts")
+        page.goto(e2e_url("/accounts"))
 
         # Navigate to first account edit page
         if page.locator(".account-card:first-of-type a, .list-item:first-of-type a").count() > 0:
@@ -138,7 +141,7 @@ class TestAccountEditPage:
 
     def test_delete_account(self, page: Page):
         """アカウントを削除できる"""
-        page.goto("http://localhost:5000/accounts")
+        page.goto(e2e_url("/accounts"))
 
         # Get initial account count
         accounts_count = page.locator(".account-card, .list-item").count()

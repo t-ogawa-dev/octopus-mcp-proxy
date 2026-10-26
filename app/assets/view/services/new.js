@@ -69,7 +69,7 @@ function addHeaderRow(key = '', value = '') {
                style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
         <input type="text" placeholder="${t('form_value_placeholder')}" value="${value}" 
                style="flex: 2; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-        <button type="button" onclick="this.parentElement.remove()" class="btn btn-sm btn-danger">${t('button_delete')}</button>
+        <button type="button" data-action="remove-row" class="btn btn-sm btn-danger">${t('button_delete')}</button>
     `;
     container.appendChild(row);
     headerIndex++;
@@ -85,7 +85,7 @@ function addEnvRow(key = '', value = '') {
                style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
         <input type="text" placeholder="${t('form_env_value_placeholder') || '値 または {{VARIABLE}}'}" value="${value}" 
                style="flex: 2; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-        <button type="button" onclick="this.parentElement.remove()" class="btn btn-sm btn-danger">${t('button_delete')}</button>
+        <button type="button" data-action="remove-row" class="btn btn-sm btn-danger">${t('button_delete')}</button>
     `;
     container.appendChild(row);
     envIndex++;
@@ -252,6 +252,20 @@ async function testStdioConnection() {
 // Initialize and setup form
 (async () => {
     await initLanguageSwitcher();
+    document.addEventListener('click', (event) => {
+        const element = event.target.closest('[data-action]');
+        if (!element) return;
+        const action = element.dataset.action;
+        if (action === 'remove-row') element.closest('.key-value-row')?.remove();
+        if (action === 'add-env') addEnvRow();
+        if (action === 'add-header') addHeaderRow();
+        if (action === 'test-connection') testConnection();
+        if (action === 'test-stdio') testStdioConnection();
+    });
+    document.addEventListener('change', (event) => {
+        if (event.target.dataset.action === 'service-type') toggleServiceType();
+        if (event.target.dataset.action === 'mcp-transport') toggleMcpTransport();
+    });
     
     // URLからMCPサービスIDを取得
     const pathParts = window.location.pathname.split('/');
@@ -319,14 +333,23 @@ async function testStdioConnection() {
             if (templateData.official_url) {
                 const infoDiv = document.createElement('div');
                 infoDiv.style.cssText = 'margin-bottom: 20px; padding: 12px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 6px; color: #0369a1;';
-                infoDiv.innerHTML = `
-                    📚 ${t('app_template_creating')}: ${templateData.name}<br>
-                    <a href="${templateData.official_url}" target="_blank" style="color: #0369a1; text-decoration: underline;">${t('app_template_official_docs')}</a>
-                `;
+                infoDiv.textContent = `📚 ${t('app_template_creating')}: ${templateData.name}`;
+                const safeOfficialUrl = AppDom.safeHttpUrl(templateData.official_url);
+                if (safeOfficialUrl) {
+                    const link = document.createElement('a');
+                    link.href = safeOfficialUrl;
+                    link.target = '_blank';
+                    link.rel = 'noopener noreferrer';
+                    link.style.cssText = 'color: #0369a1; text-decoration: underline; display: block;';
+                    link.textContent = t('app_template_official_docs');
+                    infoDiv.appendChild(link);
+                }
                 
                 // If API template with capabilities, show capability count
                 if (templateData.service_type === 'api' && templateCapabilities && templateCapabilities.length > 0) {
-                    infoDiv.innerHTML += `<br>📌 ${templateCapabilities.length}${t('app_template_capabilities_auto_register')}`;
+                    const count = document.createElement('div');
+                    count.textContent = `📌 ${templateCapabilities.length}${t('app_template_capabilities_auto_register')}`;
+                    infoDiv.appendChild(count);
                 }
                 
                 document.querySelector('form').insertBefore(infoDiv, document.querySelector('form').firstChild);

@@ -24,9 +24,7 @@ function getMcpServiceUrl(identifier, routingType) {
 
 async function loadSystemAccount() {
     try {
-        const resp = await fetch('/api/admin/system-account');
-        if (!resp.ok) throw new Error('Failed');
-        const data = await resp.json();
+        const data = await AppApi.request('/api/admin/system-account');
         _apiKey = data.bearer_token;
     } catch (e) {
         console.error('Failed to load system account', e);
@@ -94,9 +92,7 @@ async function regenerateApiKey() {
     if (!confirmed) return;
 
     try {
-        const resp = await fetch('/api/admin/system-account/regenerate', { method: 'POST' });
-        if (!resp.ok) throw new Error('Failed');
-        const data = await resp.json();
+        const data = await AppApi.request('/api/admin/system-account/regenerate', { method: 'POST' });
         _apiKey = data.bearer_token;
         _apiKeyVisible = true;
         renderApiKey();
@@ -177,6 +173,17 @@ function switchTab(name) {
 
 (async () => {
     await initLanguageSwitcher();
+    document.addEventListener('click', (event) => {
+        const element = event.target.closest('[data-action]');
+        if (!element) return;
+        const action = element.dataset.action;
+        if (action === 'copy-endpoint') copyText('endpoint-url');
+        if (action === 'toggle-key') toggleApiKey();
+        if (action === 'copy-key') copyApiKey();
+        if (action === 'regenerate-key') regenerateApiKey();
+        if (action === 'snippet-tab') switchTab(element.dataset.snippet);
+        if (action === 'copy-snippet') copySnippet(element.dataset.snippet);
+    });
     document.title = t('guide_title') + ' - Octopus MCP Proxy';
 
     await loadSystemAccount();

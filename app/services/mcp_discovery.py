@@ -153,7 +153,7 @@ async def _discover_tools_sse_post(mcp_url: str, headers: dict) -> list:
             "params": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {},
-                    "clientInfo": {"name": "Octopus MCP Proxy", "version": "1.0.0"},
+                "clientInfo": {"name": "Octopus MCP Proxy", "version": "1.0.0"},
             },
         }
 
@@ -176,7 +176,7 @@ async def _discover_tools_sse_post(mcp_url: str, headers: dict) -> list:
                 # Session IDを取得
                 session_id = response.headers.get("Mcp-Session-Id")
                 if session_id:
-                    logging.info(f"Received Mcp-Session-Id: {session_id}")
+                    logging.info("Received Mcp-Session-Id from upstream")
                     sse_headers["Mcp-Session-Id"] = session_id
 
                 # SSEストリームを読み取り
@@ -386,17 +386,16 @@ async def _discover_tools_stdio_async(command: str, args: list, env: dict, cwd: 
     Returns:
         ツールのリスト
     """
-    import os
-
     from mcp import ClientSession, StdioServerParameters
-    from mcp.client.stdio import stdio_client
+    from mcp.client.stdio import get_default_environment, stdio_client
 
     try:
-        logging.info(f"Attempting stdio connection: {command} {args}")
+        # Args may contain resolved secrets, so only the command is logged
+        logging.info("Attempting stdio connection: %s", command)
 
-        # Create server parameters
+        # Never pass the proxy's own environment (SECRET_KEY, DATABASE_URL, ...) to third-party servers
         server_params = StdioServerParameters(
-            command=command, args=args, env={**os.environ, **env} if env else None, cwd=cwd
+            command=command, args=args, env={**get_default_environment(), **env}, cwd=cwd
         )
 
         async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:

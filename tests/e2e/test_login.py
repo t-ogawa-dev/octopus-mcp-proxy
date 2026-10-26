@@ -7,6 +7,8 @@ import re
 import pytest
 from playwright.sync_api import Page, expect
 
+from tests.e2e.helpers import admin_credentials
+
 
 class TestLoginPage:
     """ログインページのE2Eテスト"""
@@ -25,8 +27,9 @@ class TestLoginPage:
         page.goto(f"{base_url}/login")
 
         # Fill login form
-        page.fill('input[name="username"]', "admin")
-        page.fill('input[name="password"]', "admin123")
+        username, password = admin_credentials()
+        page.fill('input[name="username"]', username)
+        page.fill('input[name="password"]', password)
 
         # Click login button and wait for navigation
         with page.expect_navigation():
@@ -74,8 +77,9 @@ class TestLoginPage:
         """ログアウトが動作する"""
         # Login first
         page.goto(f"{base_url}/login")
-        page.fill('input[name="username"]', "admin")
-        page.fill('input[name="password"]', "admin123")
+        username, password = admin_credentials()
+        page.fill('input[name="username"]', username)
+        page.fill('input[name="password"]', password)
 
         with page.expect_navigation():
             page.click('button[type="submit"]')

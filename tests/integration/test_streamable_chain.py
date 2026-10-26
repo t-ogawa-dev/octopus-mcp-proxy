@@ -271,18 +271,13 @@ def _parse_sse(resp):
 
 
 def _unwrap_chain_text(payload):
-    """Walk the nested MCP content text down to the leaf's echoed JSON object.
+    """Return the leaf's echoed JSON object.
 
-    Each AccelMCP hop wraps the next hop's JSON-RPC response inside
-    result.content[0].text as a JSON string, so we peel:
-        A response -> B response -> leaf response -> echoed object
+    Each AccelMCP hop relays the upstream CallToolResult unchanged, so the leaf's
+    content arrives at the top level of A's response.
     """
-    a_text = payload["result"]["content"][0]["text"]
-    b_resp = json.loads(a_text)
-    b_text = b_resp["result"]["content"][0]["text"]
-    leaf_resp = json.loads(b_text)
-    leaf_text = leaf_resp["result"]["content"][0]["text"]
-    return json.loads(leaf_text)
+    assert payload["result"]["isError"] is False
+    return json.loads(payload["result"]["content"][0]["text"])
 
 
 # ---------------------------------------------------------------------------

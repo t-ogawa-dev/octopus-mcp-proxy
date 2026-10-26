@@ -63,7 +63,7 @@ class CommonModal {
 
             const defaultTitle = t('common_confirm') || '確認';
             document.getElementById('commonModalLabel').textContent = title || defaultTitle;
-            document.getElementById('commonModalBody').innerHTML = message;
+            document.getElementById('commonModalBody').textContent = message;
             
             const confirmBtn = document.getElementById('commonModalConfirm');
             const cancelBtn = document.getElementById('commonModalCancel');
@@ -118,7 +118,7 @@ class CommonModal {
 
             const defaultTitle = t('common_notice') || '通知';
             document.getElementById('commonModalLabel').textContent = title || defaultTitle;
-            document.getElementById('commonModalBody').innerHTML = message;
+            document.getElementById('commonModalBody').textContent = message;
             
             const confirmBtn = document.getElementById('commonModalConfirm');
             const cancelBtn = document.getElementById('commonModalCancel');

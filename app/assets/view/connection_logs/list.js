@@ -37,10 +37,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 async function loadStats() {
     try {
         const params = mcpServiceId ? `?mcp_service_id=${mcpServiceId}` : '';
-        const response = await fetch(`/api/connection-logs/stats${params}`);
-        if (!response.ok) throw new Error('Failed to load stats');
-        
-        const stats = await response.json();
+        const stats = await AppApi.request(`/api/connection-logs/stats${params}`);
         
         document.getElementById('stat-total').textContent = stats.total.toLocaleString();
         document.getElementById('stat-success').textContent = stats.success.toLocaleString();
@@ -55,13 +52,10 @@ async function loadStats() {
 
 async function loadServiceInfo() {
     try {
-        const response = await fetch(`/api/mcp-services/${mcpServiceId}`);
-        if (response.ok) {
-            const service = await response.json();
-            mcpServiceName = service.name;
-            document.getElementById('breadcrumb-service').textContent = service.name;
-            document.getElementById('page-title').textContent = `${service.name} - ${t('connection_logs_list_title')}`;
-        }
+        const service = await AppApi.request(`/api/mcp-services/${mcpServiceId}`);
+        mcpServiceName = service.name;
+        document.getElementById('breadcrumb-service').textContent = service.name;
+        document.getElementById('page-title').textContent = `${service.name} - ${t('connection_logs_list_title')}`;
     } catch (error) {
         console.error('Failed to load service info:', error);
     }
@@ -69,17 +63,14 @@ async function loadServiceInfo() {
 
 async function loadAccountsFilter() {
     try {
-        const response = await fetch('/api/accounts');
-        if (response.ok) {
-            const accounts = await response.json();
-            const select = document.getElementById('filter-account');
-            accounts.forEach(account => {
-                const option = document.createElement('option');
-                option.value = account.id;
-                option.textContent = account.name;
-                select.appendChild(option);
-            });
-        }
+        const accounts = await AppApi.request('/api/accounts');
+        const select = document.getElementById('filter-account');
+        accounts.forEach(account => {
+            const option = document.createElement('option');
+            option.value = account.id;
+            option.textContent = account.name;
+            select.appendChild(option);
+        });
     } catch (error) {
         console.error('Failed to load accounts:', error);
     }
@@ -108,6 +99,14 @@ function setupEventListeners() {
     
     // Export CSV
     document.getElementById('export-btn').addEventListener('click', exportCsv);
+    document.getElementById('logs-body').addEventListener('click', (event) => {
+        const row = event.target.closest('[data-log-id]');
+        if (row) viewLogDetail(row.dataset.logId);
+    });
+    document.getElementById('pagination').addEventListener('click', (event) => {
+        const button = event.target.closest('[data-page]');
+        if (button && !button.disabled) goToPage(Number(button.dataset.page));
+    });
 }
 
 function collectFilters() {
@@ -147,10 +146,7 @@ async function loadLogs() {
             params.set('mcp_service_id', mcpServiceId);
         }
         
-        const response = await fetch(`/api/connection-logs?${params}`);
-        if (!response.ok) throw new Error('Failed to load logs');
-        
-        const data = await response.json();
+        const data = await AppApi.request(`/api/connection-logs?${params}`);
         
         if (data.items.length === 0) {
             tbody.innerHTML = `
@@ -166,18 +162,18 @@ async function loadLogs() {
         }
         
         tbody.innerHTML = data.items.map(log => `
-            <tr onclick="viewLogDetail(${log.id})">
+            <tr data-log-id="${log.id}">
                 <td>${formatDateTime(log.created_at)}</td>
-                <td>${escapeHtml(log.account_name)}</td>
-                <td><span class="method-badge">${escapeHtml(log.mcp_method)}</span></td>
-                <td>${log.tool_name ? escapeHtml(log.tool_name) : '-'}</td>
+                <td>${AppDom.escapeHtml(log.account_name)}</td>
+                <td><span class="method-badge">${AppDom.escapeHtml(log.mcp_method)}</span></td>
+                <td>${log.tool_name ? AppDom.escapeHtml(log.tool_name) : '-'}</td>
                 <td>
                     <span class="status-badge ${log.is_success ? 'success' : 'error'}">
                         ${log.is_success ? t('log_success') : t('log_error')}
                     </span>
                 </td>
                 <td>${log.duration_ms !== null ? `${log.duration_ms}ms` : '-'}</td>
-                <td>${log.ip_address || '-'}</td>
+                <td>${log.ip_address ? AppDom.escapeHtml(log.ip_address) : '-'}</td>
             </tr>
         `).join('');
         
@@ -205,13 +201,13 @@ function renderPagination(data) {
     }
     
     container.innerHTML = `
-        <button class="pagination-btn" onclick="goToPage(${data.page - 1})" ${!data.has_prev ? 'disabled' : ''}>
+        <button type="button" class="pagination-btn" data-page="${data.page - 1}" ${!data.has_prev ? 'disabled' : ''}>
             ← ${t('pagination_prev')}
         </button>
         <span class="pagination-info">
             ${data.page} / ${data.pages} (${t('pagination_total')}: ${data.total.toLocaleString()})
         </span>
-        <button class="pagination-btn" onclick="goToPage(${data.page + 1})" ${!data.has_next ? 'disabled' : ''}>
+        <button type="button" class="pagination-btn" data-page="${data.page + 1}" ${!data.has_next ? 'disabled' : ''}>
             ${t('pagination_next')} →
         </button>
     `;
@@ -238,11 +234,4 @@ function formatDateTime(isoString) {
     const date = new Date(isoString);
     const lang = document.documentElement.lang || 'ja';
     return date.toLocaleString(lang === 'ja' ? 'ja-JP' : 'en-US');
-}
-
-function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
 }

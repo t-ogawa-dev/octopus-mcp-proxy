@@ -11,7 +11,7 @@ from typing import Any
 
 import httpx
 from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp.client.stdio import get_default_environment, stdio_client
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +91,14 @@ class MCPHandler:
         # Limit to 64 characters
         return sanitized[:64]
 
+    def _sanitized_app_name(self, app) -> str:
+        """App name as used in namespaced tool names; tools/list and tools/call must agree on it"""
+        sanitized = self._sanitize_tool_name(app.name) if app.name else ""
+        # Fallback if sanitized name is empty or only special characters
+        if not re.sub(r"[_:\-+.]", "", sanitized):
+            return "app"
+        return sanitized
+
     def handle_mcp_service_request(self, account, mcp_service, mcp_request: dict[str, Any]) -> dict[str, Any]:
         """
         Handle MCP request at MCP Service level (統合エンドポイント)
@@ -122,18 +130,18 @@ class MCPHandler:
             return self._handle_resources_list_for_mcp_service(account, mcp_service, mcp_request)
 
         elif method == "resources/read":
-            return self._handle_resources_read(account, mcp_request)
+            return self._handle_resources_read(account, mcp_service, mcp_request)
 
         elif method == "prompts/list":
-            return self._handle_prompts_list(mcp_request)
+            return self._handle_prompts_list(account, mcp_service, mcp_request)
 
         elif method == "prompts/get":
-            return self._handle_prompts_get(mcp_request)
+            return self._handle_prompts_get(account, mcp_service, mcp_request)
 
         else:
             return {
                 "jsonrpc": "2.0",
-                "id": mcp_request.get("id") or 0,
+                "id": mcp_request.get("id"),
                 "error": {"code": -32601, "message": f"Method not found: {method}"},
             }
 
@@ -233,248 +241,54 @@ class MCPHandler:
             logger.debug("Public access granted (no authentication required)")
         return True
 
-    def get_capabilities(self, account, service) -> dict[str, Any]:
-        """
-        Get user's available capabilities for a service
-        Used for GET /mcp endpoint
+    def _advertised_capabilities(self, mcp_service) -> dict[str, Any]:
+        """Advertise only the capability kinds actually registered (and enabled) under mcp_service"""
+        from app.models.models import Capability, Service
 
-        Args:
-            user: ConnectionAccount object
-            service: Service object
-
-        Returns:
-            MCP capabilities response
-        """
-        from app.models.models import Capability
-
-        # Get mcp_service for hierarchical check
-        mcp_service = service.mcp_service
-
-        # Check hierarchical access at app level
-        if not self._check_hierarchical_access(account, mcp_service, app=service):
-            return {"jsonrpc": "2.0", "error": {"code": -32000, "message": "Access denied to this service"}}
-
-        # Get all capabilities for this service
-        all_capabilities = self.db.session.query(Capability).filter(Capability.app_id == service.id).all()
-
-        # Filter capabilities based on hierarchical access
-        tools = []
-        for cap in all_capabilities:
-            # Check if user has access to this specific capability
-            if self._check_hierarchical_access(account, mcp_service, app=service, capability=cap):
-                tool = {
-                    "name": cap.name,
-                    "description": cap.description or f"{cap.capability_type.upper()} tool: {cap.name}",
-                    "inputSchema": {"type": "object", "properties": {}, "required": []},
-                }
-
-                # Add body_params as input schema (preserve full schema including enums, descriptions, etc.)
-                if cap.body_params:
-                    try:
-                        body_params = json.loads(cap.body_params)
-                        # Use the complete schema from body_params if it has the right structure
-                        if "properties" in body_params:
-                            # Remove _fixed field before sending to LLM (it's for internal use)
-                            schema = {k: v for k, v in body_params.items() if k != "_fixed"}
-                            tool["inputSchema"] = schema
-                        else:
-                            # Fallback: treat as simple key-value params
-                            for key, _value in body_params.items():
-                                tool["inputSchema"]["properties"][key] = {
-                                    "type": "string",
-                                    "description": f"Parameter: {key}",
-                                }
-                    except json.JSONDecodeError:
-                        pass
-
-                tools.append(tool)
-
-        return {"capabilities": {"tools": tools}, "serverInfo": {"name": service.name, "version": "1.0.0"}}
-
-    def execute_tool_by_id(self, account, service, tool_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        """
-        Execute a specific tool by its ID (name or capability ID)
-        Used for POST /tools/<tool_id> endpoint
-
-        Args:
-            user: ConnectionAccount object
-            service: Service object
-            tool_id: Tool identifier (capability name or ID)
-            arguments: Tool arguments
-
-        Returns:
-            MCP tool execution response
-        """
-        from app.models.models import Capability
-
-        # Get mcp_service for hierarchical check
-        mcp_service = service.mcp_service
-
-        # Try to find capability by name first, then by ID
-        capability = (
-            self.db.session.query(Capability)
-            .filter(Capability.app_id == service.id, (Capability.name == tool_id) | (Capability.id == tool_id))
-            .first()
-        )
-
-        if not capability:
-            return {"jsonrpc": "2.0", "error": {"code": -32602, "message": f"Tool not found: {tool_id}"}}
-
-        # Check hierarchical permission
-        if not self._check_hierarchical_access(account, mcp_service, app=service, capability=capability):
-            return {
-                "jsonrpc": "2.0",
-                "error": {"code": -32000, "message": f"Permission denied for tool: {capability.name}"},
-            }
-
-        # Execute capability
-        if capability.type == "api":
-            result = self._execute_api_call(service, capability, arguments)
-        elif capability.type == "mcp":
-            result = self._execute_mcp_call(service, capability, arguments)
-        else:
-            return {
-                "jsonrpc": "2.0",
-                "error": {"code": -32603, "message": f"Unknown capability type: {capability.type}"},
-            }
-
-        # Return MCP-compliant response
-        return {
-            "content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False, indent=2)}],
-            "isError": not result.get("success", True),
+        cap_types = {
+            cap_type
+            for (cap_type,) in self.db.session.query(Capability.capability_type)
+            .join(Service)
+            .filter(Service.mcp_service_id == mcp_service.id, Service.is_enabled, Capability.is_enabled)
+            .distinct()
         }
 
-    def handle_http_request(self, account, service, mcp_request: dict[str, Any]) -> dict[str, Any]:
-        """
-        Handle HTTP MCP request
-
-        Args:
-            user: ConnectionAccount object
-            service: Service object
-            mcp_request: MCP protocol request
-
-        Returns:
-            MCP protocol response
-        """
-        method = mcp_request.get("method")
-
-        if method == "initialize":
-            return self._handle_initialize(account, service, mcp_request)
-
-        elif method == "server/discover":
-            return self._handle_server_discover(account, service, mcp_request)
-
-        elif method == "tools/list":
-            return self._handle_tools_list(account, service)
-
-        elif method == "tools/call":
-            return self._handle_tool_call(account, service, mcp_request)
-
-        elif method == "resources/list":
-            return self._handle_resources_list_for_service(account, service, mcp_request)
-
-        elif method == "resources/read":
-            return self._handle_resources_read(account, mcp_request)
-
-        elif method == "prompts/list":
-            return self._handle_prompts_list(mcp_request)
-
-        elif method == "prompts/get":
-            return self._handle_prompts_get(mcp_request)
-
-        else:
-            return {
-                "jsonrpc": "2.0",
-                "id": mcp_request.get("id") or 0,
-                "error": {"code": -32601, "message": f"Method not found: {method}"},
-            }
+        capabilities: dict[str, Any] = {}
+        if cap_types & {"tool", "mcp_tool"}:
+            capabilities["tools"] = {}
+        if "resource" in cap_types:
+            capabilities["resources"] = {}
+        if "prompt" in cap_types:
+            capabilities["prompts"] = {}
+        return capabilities
 
     def _handle_initialize_for_mcp_service(self, account, mcp_service, mcp_request: dict[str, Any]) -> dict[str, Any]:
         """Handle MCP initialize request at MCP Service level"""
         import uuid
 
-        from app.models.models import Capability, Service
-
-        # Check which capability types are actually registered
-        apps = self.db.session.query(Service).filter(Service.mcp_service_id == mcp_service.id, Service.is_enabled).all()
-
-        has_tools = False
-        has_resources = False
-        has_prompts = False
-
-        for app in apps:
-            capability_types = (
-                self.db.session.query(Capability.capability_type)
-                .filter(Capability.app_id == app.id, Capability.is_enabled)
-                .distinct()
-                .all()
-            )
-
-            for (cap_type,) in capability_types:
-                if cap_type in ["tool", "mcp_tool"]:
-                    has_tools = True
-                elif cap_type == "resource":
-                    has_resources = True
-                elif cap_type == "prompt":
-                    has_prompts = True
-
-        # Build capabilities dynamically based on what's registered
-        capabilities: dict[str, Any] = {}
-        if has_tools:
-            capabilities["tools"] = {}
-        if has_resources:
-            capabilities["resources"] = {}
-        if has_prompts:
-            capabilities["prompts"] = {}
-
         return {
             "jsonrpc": "2.0",
-            "id": mcp_request.get("id") or 0,
+            "id": mcp_request.get("id"),
             "result": {
                 "protocolVersion": "2024-11-05",
-                "capabilities": capabilities,
+                "capabilities": self._advertised_capabilities(mcp_service),
                 "serverInfo": {"name": f"Octopus MCP Proxy - {mcp_service.name}", "version": "1.0.0"},
                 "instructions": mcp_service.description or "",
                 "sessionId": str(uuid.uuid4()),
             },
         }
 
-    def _handle_server_discover_for_mcp_service(self, account, mcp_service, mcp_request: dict[str, Any]) -> dict[str, Any]:
+    def _handle_server_discover_for_mcp_service(
+        self, account, mcp_service, mcp_request: dict[str, Any]
+    ) -> dict[str, Any]:
         """Handle MCP 2026-07-28 server/discover at MCP Service level (stateless, no session)."""
-        from app.models.models import Capability, Service
-
-        apps = self.db.session.query(Service).filter(Service.mcp_service_id == mcp_service.id, Service.is_enabled).all()
-
-        has_tools = has_resources = has_prompts = False
-        for app in apps:
-            for (cap_type,) in (
-                self.db.session.query(Capability.capability_type)
-                .filter(Capability.app_id == app.id, Capability.is_enabled)
-                .distinct()
-                .all()
-            ):
-                if cap_type in ("tool", "mcp_tool"):
-                    has_tools = True
-                elif cap_type == "resource":
-                    has_resources = True
-                elif cap_type == "prompt":
-                    has_prompts = True
-
-        capabilities: dict[str, Any] = {}
-        if has_tools:
-            capabilities["tools"] = {}
-        if has_resources:
-            capabilities["resources"] = {}
-        if has_prompts:
-            capabilities["prompts"] = {}
-
         return {
             "jsonrpc": "2.0",
-            "id": mcp_request.get("id") or 0,
+            "id": mcp_request.get("id"),
             "result": {
                 # Advertise both spec versions so clients can pick the newest they support
                 "protocolVersions": ["2026-07-28", "2024-11-05"],
-                "capabilities": capabilities,
+                "capabilities": self._advertised_capabilities(mcp_service),
                 "serverInfo": {"name": f"Octopus MCP Proxy - {mcp_service.name}", "version": "1.0.0"},
                 "instructions": mcp_service.description or "",
             },
@@ -488,7 +302,7 @@ class MCPHandler:
         if not self._check_hierarchical_access(account, mcp_service):
             return {
                 "jsonrpc": "2.0",
-                "id": mcp_request.get("id") or 0,
+                "id": mcp_request.get("id"),
                 "result": {
                     "tools": []  # Return empty if no access to MCP service
                 },
@@ -522,20 +336,7 @@ class MCPHandler:
 
                 # Use namespace: mcp_identifier_app_name:capability_name (sanitized for Google API)
                 mcp_prefix = self._sanitize_tool_name(mcp_service.identifier) if mcp_service.identifier else "mcp"
-                sanitized_app_name = self._sanitize_tool_name(app.name) if app.name else "app"
-                sanitized_cap_name = self._sanitize_tool_name(cap.name)
-                # Fallback if sanitized name is empty or only special characters
-                if (
-                    not sanitized_app_name
-                    or sanitized_app_name.replace("_", "")
-                    .replace(":", "")
-                    .replace("-", "")
-                    .replace("+", "")
-                    .replace(".", "")
-                    == ""
-                ):
-                    sanitized_app_name = "app"
-                tool_name = f"{mcp_prefix}_{sanitized_app_name}:{sanitized_cap_name}"
+                tool_name = f"{mcp_prefix}_{self._sanitized_app_name(app)}:{self._sanitize_tool_name(cap.name)}"
 
                 tool = {
                     "name": tool_name,
@@ -566,7 +367,7 @@ class MCPHandler:
                 # Add tool to list
                 all_tools.append(tool)
 
-        return {"jsonrpc": "2.0", "id": mcp_request.get("id") or 0, "result": {"tools": all_tools}}
+        return {"jsonrpc": "2.0", "id": mcp_request.get("id"), "result": {"tools": all_tools}}
 
     def _handle_tool_call_for_mcp_service(self, account, mcp_service, mcp_request: dict[str, Any]) -> dict[str, Any]:
         """Execute tool call at MCP Service level with namespace support"""
@@ -580,7 +381,7 @@ class MCPHandler:
         if not tool_name:
             return {
                 "jsonrpc": "2.0",
-                "id": mcp_request.get("id") or 0,
+                "id": mcp_request.get("id"),
                 "error": {"code": -32602, "message": "Missing tool name"},
             }
 
@@ -606,20 +407,7 @@ class MCPHandler:
             all_apps = self.db.session.query(Service).filter(Service.mcp_service_id == mcp_service.id).all()
 
             for a in all_apps:
-                # Apply same sanitization and fallback logic as in tools/list
-                app_sanitized_name = self._sanitize_tool_name(a.name) if a.name else "app"
-                if (
-                    not app_sanitized_name
-                    or app_sanitized_name.replace("_", "")
-                    .replace(":", "")
-                    .replace("-", "")
-                    .replace("+", "")
-                    .replace(".", "")
-                    == ""
-                ):
-                    app_sanitized_name = "app"
-
-                if app_sanitized_name == sanitized_app_name:
+                if self._sanitized_app_name(a) == sanitized_app_name:
                     app = a
                     # Find capability by matching sanitized name
                     all_caps = self.db.session.query(Capability).filter(Capability.app_id == app.id).all()
@@ -646,7 +434,7 @@ class MCPHandler:
         if not capability or not app:
             return {
                 "jsonrpc": "2.0",
-                "id": mcp_request.get("id") or 0,
+                "id": mcp_request.get("id"),
                 "error": {"code": -32602, "message": f"Tool not found: {tool_name}"},
             }
 
@@ -654,7 +442,7 @@ class MCPHandler:
         if not self._check_hierarchical_access(account, mcp_service, app=app, capability=capability):
             return {
                 "jsonrpc": "2.0",
-                "id": mcp_request.get("id") or 0,
+                "id": mcp_request.get("id"),
                 "error": {"code": -32000, "message": f"Permission denied for tool: {tool_name}"},
             }
 
@@ -666,162 +454,28 @@ class MCPHandler:
         else:
             return {
                 "jsonrpc": "2.0",
-                "id": mcp_request.get("id") or 0,
+                "id": mcp_request.get("id"),
                 "error": {"code": -32603, "message": f"Unknown capability type: {capability.capability_type}"},
             }
 
-        return {
-            "jsonrpc": "2.0",
-            "id": mcp_request.get("id") or 0,
-            "result": {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False, indent=2)}]},
-        }
+        return {"jsonrpc": "2.0", "id": mcp_request.get("id"), "result": self._build_tool_call_result(result)}
 
-    def _handle_initialize(self, account, service, mcp_request: dict[str, Any]) -> dict[str, Any]:
-        """Handle MCP initialize request"""
-        import uuid
-
-        from app.models.models import Capability
-
-        # Check which capability types are actually registered for this service
-        capability_types = (
-            self.db.session.query(Capability.capability_type)
-            .filter(Capability.app_id == service.id, Capability.is_enabled)
-            .distinct()
-            .all()
-        )
-
-        has_tools = False
-        has_resources = False
-        has_prompts = False
-
-        for (cap_type,) in capability_types:
-            if cap_type in ["tool", "mcp_tool"]:
-                has_tools = True
-            elif cap_type == "resource":
-                has_resources = True
-            elif cap_type == "prompt":
-                has_prompts = True
-
-        # Build capabilities dynamically based on what's registered
-        capabilities = {}
-        if has_tools:
-            capabilities["tools"] = {}
-        if has_resources:
-            capabilities["resources"] = {}
-        if has_prompts:
-            capabilities["prompts"] = {}
+    def _build_tool_call_result(self, result: dict[str, Any]) -> dict[str, Any]:
+        """Convert an execution result into an MCP CallToolResult with isError set"""
+        # Upstream MCP servers already answer with a CallToolResult, so relay it instead of re-wrapping
+        if "jsonrpc" in result:
+            if "error" in result:
+                error = result["error"]
+                message = error.get("message") if isinstance(error, dict) else str(error)
+                return {"content": [{"type": "text", "text": message or "Upstream MCP error"}], "isError": True}
+            upstream = result.get("result")
+            if isinstance(upstream, dict) and "content" in upstream:
+                return {**upstream, "isError": bool(upstream.get("isError", False))}
 
         return {
-            "jsonrpc": "2.0",
-            "id": mcp_request.get("id") or 0,
-            "result": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": capabilities,
-                "serverInfo": {"name": f"Octopus MCP Proxy - {service.name}", "version": "1.0.0"},
-                "instructions": service.description or "",
-                "sessionId": str(uuid.uuid4()),
-            },
+            "content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False, indent=2)}],
+            "isError": not result.get("success", True),
         }
-
-    def _handle_server_discover(self, account, service, mcp_request: dict[str, Any]) -> dict[str, Any]:
-        """Handle MCP 2026-07-28 server/discover at service level (stateless, no session)."""
-        from app.models.models import Capability
-
-        mcp_service = service.mcp_service
-        capability_types = (
-            self.db.session.query(Capability.capability_type)
-            .filter(Capability.app_id == service.id, Capability.is_enabled)
-            .distinct()
-            .all()
-        )
-
-        has_tools = has_resources = has_prompts = False
-        for (cap_type,) in capability_types:
-            if cap_type in ("tool", "mcp_tool"):
-                has_tools = True
-            elif cap_type == "resource":
-                has_resources = True
-            elif cap_type == "prompt":
-                has_prompts = True
-
-        capabilities: dict[str, Any] = {}
-        if has_tools:
-            capabilities["tools"] = {}
-        if has_resources:
-            capabilities["resources"] = {}
-        if has_prompts:
-            capabilities["prompts"] = {}
-
-        return {
-            "jsonrpc": "2.0",
-            "id": mcp_request.get("id") or 0,
-            "result": {
-                "protocolVersions": ["2026-07-28", "2024-11-05"],
-                "capabilities": capabilities,
-                "serverInfo": {"name": f"Octopus MCP Proxy - {service.name}", "version": "1.0.0"},
-                "instructions": service.description or "",
-            },
-        }
-
-    def _handle_tools_list(self, account, service) -> dict[str, Any]:
-        """Return list of tools user has permission to use"""
-        from app.models.models import Capability
-
-        # Get mcp_service for hierarchical check
-        mcp_service = service.mcp_service
-
-        # Check if user has access to the service
-        if not self._check_hierarchical_access(account, mcp_service, app=service):
-            return {
-                "jsonrpc": "2.0",
-                "result": {
-                    "tools": []  # Return empty list if no access to service
-                },
-            }
-
-        # Get all tool-type capabilities for this service (exclude resource and prompt types)
-        all_capabilities = (
-            self.db.session.query(Capability)
-            .filter(
-                Capability.app_id == service.id,
-                Capability.capability_type.in_(["tool", "mcp_tool"]),
-                Capability.is_enabled,
-            )
-            .all()
-        )
-
-        # Filter capabilities based on hierarchical access
-        tools = []
-        for cap in all_capabilities:
-            if self._check_hierarchical_access(account, mcp_service, app=service, capability=cap):
-                tool = {
-                    "name": cap.name,
-                    "description": cap.description or f"{cap.capability_type.upper()} tool: {cap.name}",
-                    "inputSchema": {"type": "object", "properties": {}, "required": []},
-                }
-
-                # Add body_params as input schema (preserve full schema including enums, descriptions, etc.)
-                if cap.body_params:
-                    try:
-                        body_params = json.loads(cap.body_params)
-                        # Use the complete schema from body_params if it has the right structure
-                        if "properties" in body_params:
-                            # Send full schema to LLM (including const-constrained fixed params)
-                            # const制約により、LLMはパラメータを認識するが値は変更できない
-                            tool["inputSchema"] = dict(body_params.items())
-                        else:
-                            # Fallback: treat as simple key-value params
-                            for key, _value in body_params.items():
-                                tool["inputSchema"]["properties"][key] = {
-                                    "type": "string",
-                                    "description": f"Parameter: {key}",
-                                }
-                    except json.JSONDecodeError:
-                        pass
-
-                tools.append(tool)
-
-        return {"jsonrpc": "2.0", "id": 0, "result": {"tools": tools}}
 
     def _handle_resources_list_for_mcp_service(
         self, account, mcp_service, mcp_request: dict[str, Any]
@@ -833,7 +487,7 @@ class MCPHandler:
         if not self._check_hierarchical_access(account, mcp_service):
             return {
                 "jsonrpc": "2.0",
-                "id": mcp_request.get("id") or 0,
+                "id": mcp_request.get("id"),
                 "result": {
                     "resources": []  # Return empty if no access to MCP service
                 },
@@ -872,129 +526,72 @@ class MCPHandler:
                     resource_item["mimeType"] = resource.resource_mime_type
                 resource_list.append(resource_item)
 
-        return {"jsonrpc": "2.0", "id": mcp_request.get("id") or 0, "result": {"resources": resource_list}}
+        return {"jsonrpc": "2.0", "id": mcp_request.get("id"), "result": {"resources": resource_list}}
 
-    def _handle_resources_list_for_service(self, account, service, mcp_request: dict[str, Any]) -> dict[str, Any]:
-        """Handle resources/list request - return resource-type capabilities from single service"""
-        from app.models.models import Capability
-
-        # Get resource-type capabilities for this service
-        capabilities = (
-            self.db.session.query(Capability)
-            .filter(Capability.app_id == service.id, Capability.capability_type == "resource", Capability.is_enabled)
-            .all()
-        )
-
-        account_id = account.id if account else None
-
-        # Filter by access control
-        resource_list = []
-        for resource in capabilities:
-            # Check access control
-            if resource.access_control == "restricted":
-                if not account_id:
-                    continue
-                has_access = any(caa.account_id == account_id for caa in resource.capability_account_access)
-                if not has_access:
-                    continue
-
-            # Get identifier from the service's MCP service
-            identifier = service.mcp_service.identifier if service.mcp_service else "default"
-            resource_item = {
-                "uri": resource.resource_uri or f"resource://{identifier}/{resource.name}",
-                "name": resource.name,
-                "description": resource.description or "",
-            }
-            if resource.resource_mime_type:
-                resource_item["mimeType"] = resource.resource_mime_type
-            resource_list.append(resource_item)
-
-        return {"jsonrpc": "2.0", "id": mcp_request.get("id") or 0, "result": {"resources": resource_list}}
-
-    def _handle_resources_read(self, account, mcp_request: dict[str, Any]) -> dict[str, Any]:
-        """Handle resources/read request - return content for capability resource"""
+    def _accessible_capabilities(self, account, mcp_service, capability_type: str) -> list[tuple[Any, Any]]:
+        """Return (app, capability) pairs of the given type that the account may use within mcp_service"""
         from app.models.models import Capability, Service
 
+        if not self._check_hierarchical_access(account, mcp_service):
+            return []
+
+        pairs = []
+        apps = self.db.session.query(Service).filter(Service.mcp_service_id == mcp_service.id).all()
+        for app in apps:
+            if not self._check_hierarchical_access(account, mcp_service, app=app):
+                continue
+            capabilities = (
+                self.db.session.query(Capability)
+                .filter(Capability.app_id == app.id, Capability.capability_type == capability_type)
+                .all()
+            )
+            for cap in capabilities:
+                if self._check_hierarchical_access(account, mcp_service, app=app, capability=cap):
+                    pairs.append((app, cap))
+        return pairs
+
+    def _handle_resources_read(self, account, mcp_service, mcp_request: dict[str, Any]) -> dict[str, Any]:
+        """Handle resources/read request - return content for capability resource"""
         params = mcp_request.get("params", {})
         uri = params.get("uri", "")
 
         if not uri:
             return {
                 "jsonrpc": "2.0",
-                "id": mcp_request.get("id") or 0,
+                "id": mcp_request.get("id"),
                 "error": {"code": -32602, "message": "Missing required parameter: uri"},
             }
 
-        account_id = account.id if account else None
-
-        # Get capability resources
-        resources = (
-            self.db.session.query(Capability)
-            .join(Service)
-            .filter(Capability.capability_type == "resource", Capability.is_enabled, Service.is_enabled)
-            .all()
-        )
-
+        # Inaccessible resources are reported as not found so their existence is not disclosed
         target_resource = None
-        for resource in resources:
-            identifier = resource.service.mcp_service.identifier if resource.service.mcp_service else "default"
-            stored_uri = resource.resource_uri or f"resource://{identifier}/{resource.name}"
+        resource_uri = ""
+        for _app, resource in self._accessible_capabilities(account, mcp_service, "resource"):
+            stored_uri = resource.resource_uri or f"resource://{mcp_service.identifier}/{resource.name}"
             if stored_uri == uri or resource.name == uri:
                 target_resource = resource
+                resource_uri = stored_uri
                 break
 
         if not target_resource:
             return {
                 "jsonrpc": "2.0",
-                "id": mcp_request.get("id") or 0,
+                "id": mcp_request.get("id"),
                 "error": {"code": -32602, "message": f"Resource not found: {uri}"},
             }
 
-        # Check access control for capability resource
-        if target_resource.access_control == "restricted":
-            if not account_id:
-                return {
-                    "jsonrpc": "2.0",
-                    "id": mcp_request.get("id") or 0,
-                    "error": {"code": -32600, "message": "Access denied to this resource"},
-                }
-
-            has_access = any(caa.account_id == account_id for caa in target_resource.capability_account_access)
-            if not has_access:
-                return {
-                    "jsonrpc": "2.0",
-                    "id": mcp_request.get("id") or 0,
-                    "error": {"code": -32600, "message": "Access denied to this resource"},
-                }
-
-        # Return the capability resource content
         content = target_resource.template_content or ""
         mime_type = target_resource.resource_mime_type or "text/plain"
-        identifier = (
-            target_resource.service.mcp_service.identifier if target_resource.service.mcp_service else "default"
-        )
-        resource_uri = target_resource.resource_uri or f"resource://{identifier}/{target_resource.name}"
 
         return {
             "jsonrpc": "2.0",
-            "id": mcp_request.get("id") or 0,
+            "id": mcp_request.get("id"),
             "result": {"contents": [{"uri": resource_uri, "mimeType": mime_type, "text": content}]},
         }
 
-    def _handle_prompts_list(self, mcp_request: dict[str, Any]) -> dict[str, Any]:
-        """Handle prompts/list request - return all prompt-type capabilities"""
-        from app.models.models import Capability, Service
-
-        # Get all prompt-type capabilities across all services
-        prompts = (
-            self.db.session.query(Capability)
-            .join(Service)
-            .filter(Capability.capability_type == "prompt", Capability.is_enabled, Service.is_enabled)
-            .all()
-        )
-
+    def _handle_prompts_list(self, account, mcp_service, mcp_request: dict[str, Any]) -> dict[str, Any]:
+        """Handle prompts/list request - return prompt-type capabilities the account may use"""
         prompt_list = []
-        for prompt in prompts:
+        for _app, prompt in self._accessible_capabilities(account, mcp_service, "prompt"):
             prompt_item = {"name": prompt.name, "description": prompt.description or ""}
 
             # Extract arguments from body_params if exists
@@ -1015,16 +612,16 @@ class MCPHandler:
 
                         if arguments:
                             prompt_item["arguments"] = arguments
-                except Exception:
-                    pass
+                except (json.JSONDecodeError, TypeError, AttributeError):
+                    logger.debug("Invalid body_params on prompt %s", prompt.id)
 
             prompt_list.append(prompt_item)
 
-        return {"jsonrpc": "2.0", "id": mcp_request.get("id") or 0, "result": {"prompts": prompt_list}}
+        return {"jsonrpc": "2.0", "id": mcp_request.get("id"), "result": {"prompts": prompt_list}}
 
-    def _handle_prompts_get(self, mcp_request: dict[str, Any]) -> dict[str, Any]:
+    def _handle_prompts_get(self, account, mcp_service, mcp_request: dict[str, Any]) -> dict[str, Any]:
         """Handle prompts/get request - return specific prompt with filled template"""
-        from app.models.models import Capability, Resource
+        from app.models.models import Resource
 
         params = mcp_request.get("params", {})
         prompt_name = params.get("name")
@@ -1033,21 +630,17 @@ class MCPHandler:
         if not prompt_name:
             return {
                 "jsonrpc": "2.0",
-                "id": mcp_request.get("id") or 0,
+                "id": mcp_request.get("id"),
                 "error": {"code": -32602, "message": "Missing prompt name"},
             }
 
-        # Find prompt capability
-        prompt = (
-            self.db.session.query(Capability)
-            .filter(Capability.name == prompt_name, Capability.capability_type == "prompt", Capability.is_enabled)
-            .first()
-        )
+        prompts = self._accessible_capabilities(account, mcp_service, "prompt")
+        prompt = next((cap for _app, cap in prompts if cap.name == prompt_name), None)
 
         if not prompt:
             return {
                 "jsonrpc": "2.0",
-                "id": mcp_request.get("id") or 0,
+                "id": mcp_request.get("id"),
                 "error": {"code": -32602, "message": f"Prompt not found: {prompt_name}"},
             }
 
@@ -1072,213 +665,16 @@ class MCPHandler:
         # Return formatted prompt
         return {
             "jsonrpc": "2.0",
-            "id": mcp_request.get("id") or 0,
+            "id": mcp_request.get("id"),
             "result": {
                 "description": prompt.description or "",
                 "messages": [{"role": "user", "content": {"type": "text", "text": template}}],
             },
         }
 
-    def _handle_tool_call(self, account, service, mcp_request: dict[str, Any]) -> dict[str, Any]:
-        """Execute tool call with permission check"""
-        from app.models.models import Capability
-
-        # Get mcp_service for hierarchical check
-        mcp_service = service.mcp_service
-
-        params = mcp_request.get("params", {})
-        tool_name = params.get("name")
-        arguments = params.get("arguments", {})
-
-        # Find capability
-        capability = (
-            self.db.session.query(Capability)
-            .filter(Capability.app_id == service.id, Capability.name == tool_name)
-            .first()
-        )
-
-        if not capability:
-            return {
-                "jsonrpc": "2.0",
-                "id": mcp_request.get("id") or 0,
-                "error": {"code": -32602, "message": f"Tool not found: {tool_name}"},
-            }
-
-        # Check hierarchical permission
-        if not self._check_hierarchical_access(account, mcp_service, app=service, capability=capability):
-            return {
-                "jsonrpc": "2.0",
-                "id": mcp_request.get("id") or 0,
-                "error": {"code": -32000, "message": f"Permission denied for tool: {tool_name}"},
-            }
-
-        # Execute capability
-        if capability.type == "api":
-            result = self._execute_api_call(service, capability, arguments)
-        elif capability.type == "mcp":
-            result = self._execute_mcp_call(service, capability, arguments)
-        else:
-            return {
-                "jsonrpc": "2.0",
-                "id": mcp_request.get("id") or 0,
-                "error": {"code": -32603, "message": f"Unknown capability type: {capability.type}"},
-            }
-
-        return {
-            "jsonrpc": "2.0",
-            "id": mcp_request.get("id") or 0,
-            "result": {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False, indent=2)}]},
-        }
-
     def _execute_api_call(self, service, capability, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute API call"""
-        from app.services.variable_replacer import VariableReplacer
-
-        # Merge headers: service common headers + capability specific headers
-        headers = {}
-        if service.common_headers:
-            headers.update(json.loads(service.common_headers))
-        if capability.headers:
-            headers.update(json.loads(capability.headers))
-
-        # Replace variables in headers (always as strings)
-        headers = VariableReplacer.replace_in_dict(headers)
-
-        # Replace variables in URL (always as strings)
-        url = VariableReplacer.replace_in_string(capability.url)
-
-        # Build final request body
-        body = {}
-
-        if capability.body_params:
-            # body_params can be string (JSON) or dict
-            body_params = capability.body_params
-            if isinstance(body_params, str):
-                # JSON string: parse it
-                try:
-                    parsed = json.loads(body_params)
-
-                    # Check if it's JSON Schema format with properties
-                    if "properties" in parsed:
-                        # Extract const-constrained fixed params from schema
-                        properties = parsed.get("properties", {})
-
-                        # First, add const values (fixed params)
-                        for key, prop_def in properties.items():
-                            if "const" in prop_def:
-                                # This is a fixed parameter with const constraint
-                                const_value = prop_def["const"]
-                                # Replace variables in const value
-                                if isinstance(const_value, str):
-                                    body[key] = VariableReplacer.replace_in_string(const_value)
-                                else:
-                                    body[key] = const_value
-
-                        # Then, merge LLM-provided arguments (override if not const)
-                        for key, value in arguments.items():
-                            if key in properties and "const" not in properties[key]:
-                                # This is an LLM parameter (no const constraint)
-                                body[key] = value
-                            elif key not in properties:
-                                # Unknown parameter from LLM (allow it)
-                                body[key] = value
-                            # If key has const constraint, ignore LLM value (already set above)
-                    else:
-                        # Old format: simple key-value, treat as fixed params
-                        body.update(VariableReplacer.replace_in_dict(parsed))
-                        body.update(arguments)
-                except (json.JSONDecodeError, TypeError):
-                    pass
-            else:
-                # Dict: should not happen, but handle it
-                try:
-                    parsed = json.loads(body_params)
-                    if "properties" in parsed:
-                        # Same logic as above
-                        properties = parsed.get("properties", {})
-                        for key, prop_def in properties.items():
-                            if "const" in prop_def:
-                                const_value = prop_def["const"]
-                                if isinstance(const_value, str):
-                                    body[key] = VariableReplacer.replace_in_string(const_value)
-                                else:
-                                    body[key] = const_value
-                        for key, value in arguments.items():
-                            if key in properties and "const" not in properties[key] or key not in properties:
-                                body[key] = value
-                    else:
-                        body.update(VariableReplacer.replace_in_dict(parsed))
-                        body.update(arguments)
-                except (json.JSONDecodeError, TypeError):
-                    pass
-        else:
-            # No body_params defined, use LLM arguments directly
-            body.update(arguments)
-
-        # Check HTTP method from headers
-        http_method = headers.get("X-HTTP-Method", "POST").upper()
-
-        # Get timeout from capability settings
-        timeout_seconds = float(capability.timeout_seconds or 30)
-
-        try:
-            # Make HTTP request
-            if http_method == "GET":
-                # For GET, use query parameters instead of body
-                response = httpx.get(
-                    url,
-                    params=body,  # Query parameters
-                    headers=headers,
-                    timeout=timeout_seconds,
-                )
-            else:
-                # POST or other methods
-                response = httpx.post(url, headers=headers, json=body, timeout=timeout_seconds)
-
-            response.raise_for_status()
-
-            return {
-                "success": True,
-                "status_code": response.status_code,
-                "data": response.json()
-                if response.headers.get("content-type", "").startswith("application/json")
-                else response.text,
-            }
-        except httpx.TimeoutException:
-            return {
-                "success": False,
-                "error": {
-                    "code": "API_TIMEOUT",
-                    "message": f"APIリクエストがタイムアウトしました（{timeout_seconds}秒）",
-                    "details": {
-                        "url": url,
-                        "timeout": timeout_seconds,
-                        "suggestion": "Capability設定でtimeout_secondsを増やすか、API側の負荷を確認してください",
-                    },
-                },
-            }
-        except httpx.HTTPStatusError as e:
-            return {
-                "success": False,
-                "error": {
-                    "code": f"HTTP_{e.response.status_code}",
-                    "message": f"HTTPエラー: {e.response.status_code} {e.response.reason_phrase}",
-                    "details": {
-                        "url": url,
-                        "status_code": e.response.status_code,
-                        "response_body": e.response.text[:500] if e.response.text else None,
-                    },
-                },
-            }
-        except httpx.HTTPError as e:
-            return {
-                "success": False,
-                "error": {
-                    "code": "HTTP_ERROR",
-                    "message": f"HTTP通信エラー: {str(e)}",
-                    "details": {"url": url, "error_type": type(e).__name__},
-                },
-            }
+        return call_capability_api(service, capability, arguments)
 
     def _parse_mcp_http_response(self, response) -> dict[str, Any]:
         """Parse an upstream MCP HTTP response.
@@ -1329,12 +725,17 @@ class MCPHandler:
                 return {"success": False, "error": "MCP server URL is not configured"}
 
             if mcp_url.startswith("http"):
+                from app.services.variable_replacer import VariableReplacer
+
                 # HTTP MCP connection (Streamable HTTP compatible client)
                 headers = {}
                 if service.common_headers:
                     headers.update(json.loads(service.common_headers))
                 if capability.headers:
                     headers.update(json.loads(capability.headers))
+                # Resolve {{VAR}} the same way connection tests and discovery do
+                headers = VariableReplacer.replace_in_dict(headers)
+                mcp_url = VariableReplacer.replace_in_string(mcp_url)
 
                 # Advertise Streamable HTTP support to the upstream server: accept both a
                 # single JSON response and an SSE (text/event-stream) response. This lets
@@ -1370,7 +771,7 @@ class MCPHandler:
                         },
                     }
 
-                    logger.debug(f"Initializing MCP session at {mcp_url}")
+                    logger.debug("Initializing upstream MCP session")
                     init_response = httpx.post(mcp_url, headers=headers, json=init_request, timeout=timeout_seconds)
                     init_response.raise_for_status()
 
@@ -1378,7 +779,7 @@ class MCPHandler:
                     session_id = init_response.headers.get("Mcp-Session-Id")
                     if session_id:
                         headers["Mcp-Session-Id"] = session_id
-                        logger.debug(f"MCP session established: {session_id}")
+                        logger.debug("Upstream MCP session established")
 
                 # Make MCP request
                 mcp_request = {
@@ -1388,12 +789,11 @@ class MCPHandler:
                     "params": {"name": capability.name, "arguments": arguments},
                 }
 
-                logger.debug(f"Sending MCP request to {mcp_url}: {json.dumps(mcp_request, indent=2)}")
-                logger.debug(f"Request headers: {headers}")
+                logger.debug("Sending MCP tools/call request to upstream server")
 
                 response = httpx.post(mcp_url, headers=headers, json=mcp_request, timeout=timeout_seconds)
 
-                logger.debug(f"MCP response status: {response.status_code}, body: {response.text}")
+                logger.debug("Upstream MCP response status: %s", response.status_code)
                 response.raise_for_status()
 
                 # Upstream may answer with plain JSON or an SSE (Streamable HTTP) stream
@@ -1430,15 +830,17 @@ class MCPHandler:
             for key, value in env.items():
                 resolved_env[key] = replacer.replace_in_string(str(value))
 
-            # Run the async call
-            result = asyncio.run(
-                self._async_stdio_mcp_call(command, resolved_args, resolved_env, cwd, capability.name, arguments)
-            )
-
-            return result
+            # Bound the call so a hung server cannot hold the worker; cancellation also stops the process
+            timeout_seconds = float(capability.timeout_seconds or 30)
+            call = self._async_stdio_mcp_call(command, resolved_args, resolved_env, cwd, capability.name, arguments)
+            try:
+                return asyncio.run(asyncio.wait_for(call, timeout=timeout_seconds))
+            except asyncio.TimeoutError:
+                logger.error("stdio MCP call timed out after %ss", timeout_seconds)
+                return {"success": False, "error": f"stdio MCP call timed out after {timeout_seconds:g}s"}
 
         except Exception as e:
-            logger.error(f"stdio MCP call failed: {e}")
+            logger.error("stdio MCP call failed (%s)", type(e).__name__)
             return {"success": False, "error": str(e)}
 
     async def _async_stdio_mcp_call(
@@ -1451,11 +853,9 @@ class MCPHandler:
         arguments: dict[str, Any],
     ) -> dict[str, Any]:
         """Async implementation of stdio MCP call"""
-        import os
-
-        # Create server parameters
+        # Never pass the proxy's own environment (SECRET_KEY, DATABASE_URL, ...) to third-party servers
         server_params = StdioServerParameters(
-            command=command, args=args, env={**os.environ, **env} if env else None, cwd=cwd
+            command=command, args=args, env={**get_default_environment(), **env}, cwd=cwd
         )
 
         try:
@@ -1489,7 +889,7 @@ class MCPHandler:
                     return {"jsonrpc": "2.0", "id": 1, "result": {"content": [], "isError": False}}
 
         except Exception as e:
-            logger.error(f"async stdio MCP call error: {e}")
+            logger.error("async stdio MCP call failed (%s)", type(e).__name__)
             return {"jsonrpc": "2.0", "id": 1, "error": {"code": -32603, "message": str(e)}}
 
 
@@ -1505,8 +905,6 @@ def execute_capability_api(capability, params: dict[str, Any] | None = None):
         Dictionary with execution results including success status, data, and execution time
     """
     import time
-
-    from app.services.variable_replacer import VariableReplacer
 
     start_time = time.time()
     params = params or {}
@@ -1527,8 +925,52 @@ def execute_capability_api(capability, params: dict[str, Any] | None = None):
             "execution_time_ms": execution_time_ms,
         }
 
-    # Get the service (app) from capability
-    service = capability.service
+    result = call_capability_api(capability.service, capability, params)
+    result["execution_time_ms"] = int((time.time() - start_time) * 1000)
+    return result
+
+
+def _build_api_request_body(capability, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Merge const (fixed) params from body_params with caller-provided arguments.
+
+    Const values always win; arguments for unknown keys are passed through. If body_params
+    cannot be parsed, the arguments are sent as-is rather than being dropped.
+    """
+    from app.services.variable_replacer import VariableReplacer
+
+    if not capability.body_params:
+        return dict(arguments)
+
+    try:
+        parsed = (
+            json.loads(capability.body_params) if isinstance(capability.body_params, str) else capability.body_params
+        )
+    except (json.JSONDecodeError, TypeError):
+        logger.warning("Invalid body_params on capability %s; sending arguments as-is", capability.id)
+        return dict(arguments)
+    if not isinstance(parsed, dict):
+        return dict(arguments)
+
+    if "properties" not in parsed:
+        # Old format: simple key-value pairs are fixed params
+        return {**VariableReplacer.replace_in_dict(parsed), **arguments}
+
+    body: dict[str, Any] = {}
+    properties = parsed.get("properties", {})
+    for key, prop_def in properties.items():
+        if isinstance(prop_def, dict) and "const" in prop_def:
+            const_value = prop_def["const"]
+            body[key] = VariableReplacer.replace_in_string(const_value) if isinstance(const_value, str) else const_value
+    for key, value in arguments.items():
+        prop_def = properties.get(key)
+        if not (isinstance(prop_def, dict) and "const" in prop_def):
+            body[key] = value
+    return body
+
+
+def call_capability_api(service, capability, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Send the HTTP request for an API (tool) capability. Shared by tools/call and the admin test run."""
+    from app.services.variable_replacer import VariableReplacer
 
     # Merge headers: service common headers + capability specific headers
     headers = {}
@@ -1536,67 +978,23 @@ def execute_capability_api(capability, params: dict[str, Any] | None = None):
         headers.update(json.loads(service.common_headers))
     if capability.headers:
         headers.update(json.loads(capability.headers))
-
-    # Replace variables in headers
     headers = VariableReplacer.replace_in_dict(headers)
-
-    # Replace variables in URL
     url = VariableReplacer.replace_in_string(capability.url)
+    body = _build_api_request_body(capability, arguments)
 
-    # Build final request body
-    body = {}
-
-    if capability.body_params:
-        try:
-            parsed = (
-                json.loads(capability.body_params)
-                if isinstance(capability.body_params, str)
-                else capability.body_params
-            )
-
-            if "properties" in parsed:
-                # Extract const-constrained fixed params from schema
-                properties = parsed.get("properties", {})
-
-                # Add const values (fixed params)
-                for key, prop_def in properties.items():
-                    if "const" in prop_def:
-                        const_value = prop_def["const"]
-                        if isinstance(const_value, str):
-                            body[key] = VariableReplacer.replace_in_string(const_value)
-                        else:
-                            body[key] = const_value
-
-                # Merge user-provided parameters
-                for key, value in params.items():
-                    if key in properties and "const" not in properties[key] or key not in properties:
-                        body[key] = value
-            else:
-                # Simple key-value format
-                body.update(VariableReplacer.replace_in_dict(parsed))
-                body.update(params)
-        except (json.JSONDecodeError, TypeError):
-            body.update(params)
-    else:
-        body.update(params)
-
-    # Get HTTP method
     http_method = headers.get("X-HTTP-Method", "POST").upper()
-
-    # Get timeout from capability settings
     timeout_seconds = float(capability.timeout_seconds or 30)
+    # Error details reach MCP clients, so they show the configured URL, never the one with resolved secrets
+    display_url = capability.url
 
     try:
-        # Make HTTP request
         if http_method == "GET":
+            # For GET, use query parameters instead of body
             response = httpx.get(url, params=body, headers=headers, timeout=timeout_seconds)
         else:
             response = httpx.post(url, headers=headers, json=body, timeout=timeout_seconds)
 
         response.raise_for_status()
-
-        end_time = time.time()
-        execution_time_ms = int((end_time - start_time) * 1000)
 
         return {
             "success": True,
@@ -1604,52 +1002,39 @@ def execute_capability_api(capability, params: dict[str, Any] | None = None):
             "data": response.json()
             if response.headers.get("content-type", "").startswith("application/json")
             else response.text,
-            "execution_time_ms": execution_time_ms,
         }
     except httpx.TimeoutException:
-        end_time = time.time()
-        execution_time_ms = int((end_time - start_time) * 1000)
-
         return {
             "success": False,
             "error": {
                 "code": "API_TIMEOUT",
                 "message": f"APIリクエストがタイムアウトしました（{timeout_seconds}秒）",
                 "details": {
-                    "url": url,
+                    "url": display_url,
                     "timeout": timeout_seconds,
                     "suggestion": "Capability設定でtimeout_secondsを増やすか、API側の負荷を確認してください",
                 },
             },
-            "execution_time_ms": execution_time_ms,
         }
     except httpx.HTTPStatusError as e:
-        end_time = time.time()
-        execution_time_ms = int((end_time - start_time) * 1000)
-
         return {
             "success": False,
             "error": {
                 "code": f"HTTP_{e.response.status_code}",
                 "message": f"HTTPエラー: {e.response.status_code} {e.response.reason_phrase}",
                 "details": {
-                    "url": url,
+                    "url": display_url,
                     "status_code": e.response.status_code,
                     "response_body": e.response.text[:500] if e.response.text else None,
                 },
             },
-            "execution_time_ms": execution_time_ms,
         }
     except httpx.HTTPError as e:
-        end_time = time.time()
-        execution_time_ms = int((end_time - start_time) * 1000)
-
         return {
             "success": False,
             "error": {
                 "code": "HTTP_ERROR",
                 "message": f"HTTP通信エラー: {str(e)}",
-                "details": {"url": url, "error_type": type(e).__name__},
+                "details": {"url": display_url, "error_type": type(e).__name__},
             },
-            "execution_time_ms": execution_time_ms,
         }

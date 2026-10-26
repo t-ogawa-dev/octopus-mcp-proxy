@@ -24,7 +24,7 @@ Pass the design to the `developer` agent. Implement the smallest change that sat
 
 ### 3. Review
 
-Pass the diff to the `reviewer` agent. Check requirements, regressions, MCP compatibility, authentication, authorization, validation, logging, security, and missing tests. If a critical or high-priority finding is reported, return to `developer`, fix it, and rerun the review.
+Pass the same diff, request, and design acceptance criteria independently to the `spec-reviewer`, `security-reviewer`, and `code-quality-reviewer` agents. Run these perspective reviews in parallel where supported. Then pass their reports and the diff to the `reviewer` agent to deduplicate and synthesize a prioritized result. If a critical or high-priority finding is reported, return to `developer`, fix it, and rerun all affected perspective reviews and synthesis.
 
 ### 4. Testing
 

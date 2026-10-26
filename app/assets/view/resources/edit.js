@@ -120,8 +120,7 @@ function generateResourcePreview() {
 }
 
 async function loadResource() {
-    const response = await fetch(`/api/resources/${resourceId}`);
-    currentResource = await response.json();
+    currentResource = await AppApi.request(`/api/resources/${resourceId}`);
     
     // パンくずリスト更新
     document.getElementById('resource-name-breadcrumb').textContent = currentResource.name;
@@ -140,8 +139,7 @@ async function loadResource() {
 }
 
 async function loadAccounts() {
-    const response = await fetch('/api/accounts');
-    accounts = await response.json();
+    accounts = await AppApi.request('/api/accounts');
 }
 
 function renderAccountLists() {
@@ -252,19 +250,12 @@ async function handleSubmit(e) {
     };
     
     try {
-        const response = await fetch(`/api/resources/${resourceId}`, {
+        await AppApi.request(`/api/resources/${resourceId}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
         });
-        
-        if (response.ok) {
-            await modal.success(t('resource_updated_success'));
-            window.location.href = `/resources/${resourceId}`;
-        } else {
-            const error = await response.json();
-            await modal.error(t('common_error') + ': ' + (error.error || t('error_unknown')));
-        }
+        await modal.success(t('resource_updated_success'));
+        window.location.href = `/resources/${resourceId}`;
     } catch (e) {
         await modal.error(t('common_error') + ': ' + e.message);
     }
@@ -274,6 +265,23 @@ async function handleSubmit(e) {
 (async () => {
     await initLanguageSwitcher();
     await loadResource();
+
+    document.addEventListener('click', (event) => {
+        const action = event.target.closest('[data-action]')?.dataset.action;
+        if (action === 'select-file') document.getElementById('resource_file').click();
+        if (action === 'clear-file') clearResourceFile();
+    });
+    document.addEventListener('change', (event) => {
+        const action = event.target.dataset.action;
+        if (action === 'toggle-input-type') toggleResourceInputType();
+        if (action === 'file-input' && event.target.files[0]) handleResourceFileUpload(event.target.files[0]);
+    });
+    document.addEventListener('input', (event) => {
+        if (event.target.dataset.action === 'resource-content-input') {
+            generateResourcePreview();
+            updateCharCount();
+        }
+    });
     
     document.getElementById('resource-form').addEventListener('submit', handleSubmit);
     

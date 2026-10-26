@@ -1,12 +1,11 @@
 // capabilities/detail.js - Capability Detail Page
-const capabilityId = parseInt(window.location.pathname.split('/')[2]);
+const capabilityId = Number.parseInt(window.location.pathname.split('/')[2], 10);
 let llmParamsSchema = { properties: {}, required: [] }; // Store LLM params schema for form generation
 let currentCapabilityType = 'tool'; // Store capability type for test/preview logic
 let currentTemplateContent = ''; // Store template content for prompt preview
 
 async function loadCapability() {
-    const response = await fetch(`/api/capabilities/${capabilityId}`);
-    const cap = await response.json();
+    const cap = await AppApi.request(`/api/capabilities/${capabilityId}`);
     
     // Store capability type and template content
     currentCapabilityType = cap.capability_type;
@@ -27,8 +26,7 @@ async function loadCapability() {
         
         // Fetch service name, base URL, and service type for breadcrumb
         try {
-            const serviceResponse = await fetch(`/api/apps/${serviceId}`);
-            const service = await serviceResponse.json();
+            const service = await AppApi.request(`/api/apps/${serviceId}`);
             if (service.mcp_service_name) {
                 document.getElementById('mcp-service-link').textContent = service.mcp_service_name;
             }
@@ -51,10 +49,10 @@ async function loadCapability() {
     }
     
     // Build full URL display
-    let urlDisplay = cap.url || 'N/A';
+    let urlDisplay = AppDom.escapeHtml(cap.url || 'N/A');
     if (baseUrl && cap.url && !cap.url.startsWith('http')) {
         const separator = baseUrl.endsWith('/') || cap.url.startsWith('/') ? '' : '/';
-        urlDisplay = `<span style="color: #666;">${baseUrl}</span>${separator}<span style="font-weight: 600;">${cap.url}</span>`;
+        urlDisplay = `<span style="color: #666;">${AppDom.escapeHtml(baseUrl)}</span>${separator}<span style="font-weight: 600;">${AppDom.escapeHtml(cap.url)}</span>`;
     }
     
     // Filter out internal headers (X-HTTP-Method)
@@ -130,18 +128,11 @@ async function loadCapability() {
     
     console.log('Final relayParamsDisplay:', JSON.stringify(relayParamsDisplay, null, 2));
     
-    // Helper function to escape HTML in JSON output
-    function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-    
     const relayParamsJson = Object.keys(relayParamsDisplay).length > 0 
-        ? escapeHtml(JSON.stringify(relayParamsDisplay, null, 2))
+        ? AppDom.escapeHtml(JSON.stringify(relayParamsDisplay, null, 2))
         : t('capability_no_relay_params');
     const llmParamsJson = Object.keys(llmParams.properties).length > 0 
-        ? escapeHtml(JSON.stringify(llmParams, null, 2))
+        ? AppDom.escapeHtml(JSON.stringify(llmParams, null, 2))
         : t('capability_no_params');
     
     const container = document.getElementById('capability-detail');
@@ -156,7 +147,7 @@ async function loadCapability() {
         <div class="detail-section">
             <h3>${t("capability_mcp_template_content_label")}</h3>
             <p class="text-muted" style="font-size: 0.9em; margin-bottom: 0.5rem;">${t('capability_template_content_description')}</p>
-            <pre class="code-block" style="white-space: pre-wrap;">${escapeHtml(templateContent)}</pre>
+            <pre class="code-block" style="white-space: pre-wrap;">${AppDom.escapeHtml(templateContent)}</pre>
         </div>
         
         <div class="detail-section">
@@ -177,11 +168,11 @@ async function loadCapability() {
             <table class="detail-table">
                 <tr>
                     <th>${t("capability_resource_uri_label")}</th>
-                    <td><code style="font-size: 0.9em;">${escapeHtml(resourceUri)}</code></td>
+                        <td><code style="font-size: 0.9em;">${AppDom.escapeHtml(resourceUri)}</code></td>
                 </tr>
                 <tr>
                     <th>${t("capability_resource_mime_type_label")}</th>
-                    <td><span class="badge badge-method">${escapeHtml(resourceMimeType)}</span></td>
+                        <td><span class="badge badge-method">${AppDom.escapeHtml(resourceMimeType)}</span></td>
                 </tr>
             </table>
         </div>
@@ -189,7 +180,7 @@ async function loadCapability() {
         <div class="detail-section">
             <h3>${t("capability_resource_content_title")}</h3>
             <p class="text-muted" style="font-size: 0.9em; margin-bottom: 0.5rem;">${t('capability_resource_content_description')}</p>
-            <pre class="code-block" style="white-space: pre-wrap; max-height: 400px; overflow-y: auto;">${escapeHtml(resourceContent)}</pre>
+            <pre class="code-block" style="white-space: pre-wrap; max-height: 400px; overflow-y: auto;">${AppDom.escapeHtml(resourceContent)}</pre>
         </div>
         `;
     } else {
@@ -197,7 +188,7 @@ async function loadCapability() {
         typeSpecificSections = `
         <div class="detail-section">
             <h3>${t("capability_individual_headers")}</h3>
-            <pre class="code-block">${Object.keys(displayHeaders).length > 0 ? JSON.stringify(displayHeaders, null, 2) : t('capability_no_headers')}</pre>
+            <pre class="code-block">${Object.keys(displayHeaders).length > 0 ? AppDom.escapeHtml(JSON.stringify(displayHeaders, null, 2)) : t('capability_no_headers')}</pre>
         </div>
         
         <div class="detail-section">
@@ -216,9 +207,9 @@ async function loadCapability() {
     
     container.innerHTML = `
         <div class="detail-section">
-            <h2>${cap.name}</h2>
-            <span class="badge badge-${cap.capability_type}">${cap.capability_type.toUpperCase()}</span>
-            ${cap.description ? `<p class="text-muted">${cap.description}</p>` : ''}
+            <h2>${AppDom.escapeHtml(cap.name)}</h2>
+            <span class="badge badge-${AppDom.escapeHtml(cap.capability_type)}">${AppDom.escapeHtml(cap.capability_type.toUpperCase())}</span>
+            ${cap.description ? `<p class="text-muted">${AppDom.escapeHtml(cap.description)}</p>` : ''}
         </div>
         
         <div class="detail-section">
@@ -226,7 +217,7 @@ async function loadCapability() {
             <table class="detail-table">
                 <tr>
                     <th>${t("capability_type_detail")}</th>
-                    <td><span class="badge badge-${cap.capability_type}">${cap.capability_type.toUpperCase()}</span></td>
+                    <td><span class="badge badge-${AppDom.escapeHtml(cap.capability_type)}">${AppDom.escapeHtml(cap.capability_type.toUpperCase())}</span></td>
                 </tr>
                 <tr>
                     <th>${t('access_control')}</th>
@@ -237,7 +228,7 @@ async function loadCapability() {
                 ${cap.capability_type !== 'prompt' && cap.capability_type !== 'resource' ? `
                 <tr>
                     <th>${t("capability_method_label")}</th>
-                    <td><span class="badge badge-method">${cap.headers['X-HTTP-Method'] || 'POST'}</span></td>
+                    <td><span class="badge badge-method">${AppDom.escapeHtml(cap.headers['X-HTTP-Method'] || 'POST')}</span></td>
                 </tr>
                 <tr>
                     <th>${t("capability_url_label")}</th>
@@ -328,48 +319,52 @@ function generateTestParamsForm() {
             ? `<span style="background-color: #fee2e2; color: #991b1b; padding: 2px 6px; border-radius: 3px; font-size: 0.75rem; margin-left: 8px;">${t('capability_test_required')}</span>`
             : `<span style="background-color: #e5e7eb; color: #6b7280; padding: 2px 6px; border-radius: 3px; font-size: 0.75rem; margin-left: 8px;">${t('capability_test_optional')}</span>`;
         
-        const typeLabel = schema.type ? `<span style="color: #6b7280; font-size: 0.85rem; margin-left: 8px;">(${schema.type})</span>` : '';
+        // Schema keys, types and defaults can come from an upstream MCP server, so escape everything
+        const k = AppDom.escapeHtml(key);
+        const type = AppDom.escapeHtml(schema.type || '');
+        const typeLabel = schema.type ? `<span style="color: #6b7280; font-size: 0.85rem; margin-left: 8px;">(${type})</span>` : '';
         
         const defaultValue = schema.default !== undefined ? schema.default : getDefaultByType(schema.type);
+        const defaultAttr = AppDom.escapeHtml(defaultValue);
         
         html += `<div class="form-group" style="margin-bottom: 16px;">`;
-        html += `<label for="test-param-${key}" style="display: flex; align-items: center; margin-bottom: 6px;">`;
-        html += `<strong>${key}</strong>${typeLabel}${requiredBadge}`;
+        html += `<label for="test-param-${k}" style="display: flex; align-items: center; margin-bottom: 6px;">`;
+        html += `<strong>${k}</strong>${typeLabel}${requiredBadge}`;
         html += `</label>`;
         
         // Generate input based on type
         if (schema.type === 'boolean') {
             html += `<div style="display: flex; gap: 16px;">`;
             html += `<label style="display: flex; align-items: center; cursor: pointer;">`;
-            html += `<input type="radio" name="test-param-${key}" id="test-param-${key}-true" value="true" ${defaultValue === true ? 'checked' : ''} style="margin-right: 6px;">`;
+            html += `<input type="radio" name="test-param-${k}" id="test-param-${k}-true" value="true" ${defaultValue === true ? 'checked' : ''} style="margin-right: 6px;">`;
             html += `<span>${t('capability_test_true')}</span>`;
             html += `</label>`;
             html += `<label style="display: flex; align-items: center; cursor: pointer;">`;
-            html += `<input type="radio" name="test-param-${key}" id="test-param-${key}-false" value="false" ${defaultValue !== true ? 'checked' : ''} style="margin-right: 6px;">`;
+            html += `<input type="radio" name="test-param-${k}" id="test-param-${k}-false" value="false" ${defaultValue !== true ? 'checked' : ''} style="margin-right: 6px;">`;
             html += `<span>${t('capability_test_false')}</span>`;
             html += `</label>`;
             html += `</div>`;
         } else if (schema.type === 'number' || schema.type === 'integer') {
             const step = schema.type === 'integer' ? '1' : 'any';
-            html += `<input type="number" id="test-param-${key}" data-key="${key}" data-type="${schema.type}" step="${step}" value="${defaultValue}" style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 4px;">`;
+            html += `<input type="number" id="test-param-${k}" data-key="${k}" data-type="${type}" step="${step}" value="${defaultAttr}" style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 4px;">`;
         } else if (schema.type === 'array' || schema.type === 'object') {
             const placeholderValue = schema.type === 'array' ? '[]' : '{}';
             const displayValue = typeof defaultValue === 'object' ? JSON.stringify(defaultValue, null, 2) : placeholderValue;
-            html += `<textarea id="test-param-${key}" data-key="${key}" data-type="${schema.type}" rows="3" style="width: 100%; padding: 10px; font-family: monospace; font-size: 0.9em; border: 1px solid #d1d5db; border-radius: 4px;">${displayValue}</textarea>`;
+            html += `<textarea id="test-param-${k}" data-key="${k}" data-type="${type}" rows="3" style="width: 100%; padding: 10px; font-family: monospace; font-size: 0.9em; border: 1px solid #d1d5db; border-radius: 4px;">${AppDom.escapeHtml(displayValue)}</textarea>`;
             html += `<small style="color: #6c757d;">JSON形式で入力</small>`;
         } else {
             // Default: string or unknown type
-            html += `<input type="text" id="test-param-${key}" data-key="${key}" data-type="${schema.type || 'string'}" value="${defaultValue}" style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 4px;">`;
+            html += `<input type="text" id="test-param-${k}" data-key="${k}" data-type="${type || 'string'}" value="${defaultAttr}" style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 4px;">`;
         }
         
         // Show description if available
         if (schema.description) {
-            html += `<small style="color: #6c757d; display: block; margin-top: 4px;">${schema.description}</small>`;
+            html += `<small style="color: #6c757d; display: block; margin-top: 4px;">${AppDom.escapeHtml(schema.description)}</small>`;
         }
         
         // Show default value hint if available
         if (schema.default !== undefined) {
-            html += `<small style="color: #3b82f6; display: block; margin-top: 2px;">${t('capability_test_default')}: ${JSON.stringify(schema.default)}</small>`;
+            html += `<small style="color: #3b82f6; display: block; margin-top: 2px;">${t('capability_test_default')}: ${AppDom.escapeHtml(JSON.stringify(schema.default))}</small>`;
         }
         
         html += `</div>`;
@@ -403,7 +398,7 @@ function collectTestParams() {
         
         if (schema.type === 'boolean') {
             // Get radio button value
-            const checkedRadio = document.querySelector(`input[name="test-param-${key}"]:checked`);
+            const checkedRadio = document.querySelector(`input[name="test-param-${CSS.escape(key)}"]:checked`);
             params[key] = checkedRadio ? checkedRadio.value === 'true' : false;
         } else if (schema.type === 'number' || schema.type === 'integer') {
             const input = document.getElementById(`test-param-${key}`);
@@ -506,13 +501,10 @@ async function executeTest() {
         resultDiv.style.display = 'none';
         
         try {
-            const response = await fetch(`/api/capabilities/${capabilityId}/test`, {
+            const result = await AppApi.request(`/api/capabilities/${capabilityId}/test`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ params })
             });
-            
-            const result = await response.json();
             
             // Show result
             resultDiv.style.display = 'block';
@@ -550,5 +542,10 @@ function clearTestResult() {
 // Initialize language and load capability detail
 (async () => {
     await initLanguageSwitcher();
+    document.addEventListener('click', (event) => {
+        const action = event.target.closest('[data-action]')?.dataset.action;
+        if (action === 'execute-test') executeTest();
+        if (action === 'clear-test') clearTestResult();
+    });
     loadCapability();
 })();

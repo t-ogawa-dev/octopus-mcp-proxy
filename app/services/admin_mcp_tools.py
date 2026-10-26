@@ -35,10 +35,7 @@ def get_dashboard_summary() -> dict:
     app_count = Service.query.count()
     variable_count = Variable.query.count()
     recent_errors = (
-        McpConnectionLog.query.filter_by(is_success=False)
-        .order_by(McpConnectionLog.created_at.desc())
-        .limit(5)
-        .all()
+        McpConnectionLog.query.filter_by(is_success=False).order_by(McpConnectionLog.created_at.desc()).limit(5).all()
     )
     return {
         "mcp_service_count": mcp_service_count,
@@ -52,12 +49,7 @@ def get_dashboard_summary() -> dict:
 def get_connection_logs(limit: int = 50, offset: int = 0) -> dict:
     """MCP 接続ログを取得する"""
     limit = min(max(1, limit), 200)
-    logs = (
-        McpConnectionLog.query.order_by(McpConnectionLog.created_at.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
+    logs = McpConnectionLog.query.order_by(McpConnectionLog.created_at.desc()).offset(offset).limit(limit).all()
     total = McpConnectionLog.query.count()
     return {
         "total": total,
@@ -89,12 +81,7 @@ def get_error_logs(limit: int = 50, offset: int = 0) -> dict:
 def get_admin_action_logs(limit: int = 50, offset: int = 0) -> dict:
     """管理者操作ログを取得する"""
     limit = min(max(1, limit), 200)
-    logs = (
-        AdminActionLog.query.order_by(AdminActionLog.created_at.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
+    logs = AdminActionLog.query.order_by(AdminActionLog.created_at.desc()).offset(offset).limit(limit).all()
     total = AdminActionLog.query.count()
     return {
         "total": total,

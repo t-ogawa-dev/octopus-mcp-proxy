@@ -7,7 +7,7 @@ function addHeader(key = '', value = '') {
     row.innerHTML = `
         <input type="text" placeholder="Header Name (例: Authorization)" class="header-key" value="${key}">
         <input type="text" placeholder="Header Value (例: Bearer {token})" class="header-value" value="${value}">
-        <button type="button" onclick="this.parentElement.remove()">削除</button>
+        <button type="button" data-action="remove-header">削除</button>
     `;
     container.appendChild(row);
 }
@@ -27,8 +27,7 @@ function getHeaders() {
 
 async function loadTemplate() {
     try {
-        const response = await fetch(`/api/mcp-templates/${TEMPLATE_ID}`);
-        const template = await response.json();
+        const template = await AppApi.request(`/api/mcp-templates/${TEMPLATE_ID}`);
         
         // Populate form
         document.getElementById('name').value = template.name || '';
@@ -73,18 +72,11 @@ document.getElementById('template-form').addEventListener('submit', async (e) =>
     };
     
     try {
-        const response = await fetch(`/api/mcp-templates/${TEMPLATE_ID}`, {
+        await AppApi.request(`/api/mcp-templates/${TEMPLATE_ID}`, {
             method: 'PUT',
-            headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(formData)
         });
-        
-        if (response.ok) {
-            window.location.href = `/templates?message=${encodeURIComponent('更新しました')}`;
-        } else {
-            const error = await response.json();
-            await modal.error('更新に失敗しました: ' + (error.error || t('error_unknown')));
-        }
+        window.location.href = `/templates?message=${encodeURIComponent('更新しました')}`;
     } catch (e) {
         await modal.error('更新に失敗しました: ' + e.message);
     }
@@ -93,5 +85,13 @@ document.getElementById('template-form').addEventListener('submit', async (e) =>
 // Initialize
 (async () => {
     await initLanguageSwitcher();
+    document.addEventListener('click', (event) => {
+        const action = event.target.closest('[data-action]')?.dataset.action;
+        if (action === 'remove-header') {
+            event.target.closest('.header-row')?.remove();
+        }
+        if (action === 'add-header') addHeader();
+        if (action === 'back') window.history.back();
+    });
     await loadTemplate();
 })();

@@ -80,10 +80,10 @@
         </div>
         
         <div style="display: flex; flex-direction: column; gap: 10px; align-self: center;">
-            <button onclick="moveToEnabled()" type="button" class="btn btn-primary" title="選択したアカウントを接続可能にする">←</button>
-            <button onclick="moveAllToEnabled()" type="button" class="btn btn-primary" title="全てのアカウントを接続可能にする">←←</button>
-            <button onclick="moveToDisabled()" type="button" class="btn btn-secondary" title="選択したアカウントの接続を解除">→</button>
-            <button onclick="moveAllToDisabled()" type="button" class="btn btn-secondary" title="全てのアカウントの接続を解除">→→</button>
+            <button type="button" data-action="move-enabled" class="btn btn-primary" title="選択したアカウントを接続可能にする">←</button>
+            <button type="button" data-action="move-all-enabled" class="btn btn-primary" title="全てのアカウントを接続可能にする">←←</button>
+            <button type="button" data-action="move-disabled" class="btn btn-secondary" title="選択したアカウントの接続を解除">→</button>
+            <button type="button" data-action="move-all-disabled" class="btn btn-secondary" title="全てのアカウントの接続を解除">→→</button>
         </div>
         
         <div style="flex: 1;">

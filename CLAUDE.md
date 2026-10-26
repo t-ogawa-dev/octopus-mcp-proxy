@@ -53,8 +53,11 @@ Keep complex business logic out of controllers and place reusable logic in `app/
 # Automatic fixes and formatting
 ./run_format.sh
 
-# Full test suite with coverage
+# Unit and integration tests with coverage
 ./run_tests.sh
+
+# E2E tests (Playwright, runs against the compose stack)
+docker compose --profile e2e run --rm e2e
 
 # Focused test
 pytest tests/unit/path/to/test_file.py -q

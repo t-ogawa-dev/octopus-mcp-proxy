@@ -284,3 +284,18 @@ def test_error_response_json_serializable(client, db, test_capability_for_errors
         json_str = json.dumps(data)
         assert json_str is not None
         assert len(json_str) > 0
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("postgresql://u:p@db:5432/x", "postgresql+psycopg2://u:p@db:5432/x"),
+        ("postgres://u:p@db/x", "postgresql+psycopg2://u:p@db/x"),
+        ("postgresql+psycopg2://u:p@db/x", "postgresql+psycopg2://u:p@db/x"),
+        ("sqlite:///mcp.db", "sqlite:///mcp.db"),
+    ],
+)
+def test_database_url_uses_installed_postgres_driver(url, expected):
+    from app.config.config import _database_url
+
+    assert _database_url(url) == expected

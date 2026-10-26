@@ -112,21 +112,25 @@ curl -k -H "Authorization: Bearer $TOKEN" \
 curl -k -X POST \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"arguments": {"message": "Test from MCP"}}' \
-  https://weather.lvh.me/tools/echo_test
+  -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "echo_test", "arguments": {"message": "Test from MCP"}}}' \
+  https://weather.lvh.me/mcp
 ```
 
 **Expected Output:**
 
 ```json
 {
-  "content": [
-    {
-      "type": "text",
-      "text": "{\"success\": true, \"status_code\": 200, \"data\": {...}}"
-    }
-  ],
-  "isError": false
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"success\": true, \"status_code\": 200, \"data\": {...}}"
+      }
+    ],
+    "isError": false
+  }
 }
 ```
 

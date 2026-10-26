@@ -156,7 +156,8 @@ class TestTemplateSyncService:
         parent McpServiceTemplate rows, otherwise the bulk delete violates the DB-level
         foreign key constraint (no ON DELETE CASCADE) and the whole sync fails in production
         Postgres, even though it passes against SQLite (which doesn't enforce FKs in tests)."""
-        from app.models.models import McpCapabilityTemplate, McpServiceTemplate, db as _db
+        from app.models.models import McpCapabilityTemplate, McpServiceTemplate
+        from app.models.models import db as _db
         from app.services.template_sync import TemplateSyncService
 
         with app.app_context():
@@ -200,9 +201,7 @@ class TestTemplateSyncService:
                         "description": "Replacement template",
                         "icon": "🆕",
                         "category": "Test",
-                        "capabilities": [
-                            {"name": "New Capability", "capability_type": "tool", "endpoint_path": "x"}
-                        ],
+                        "capabilities": [{"name": "New Capability", "capability_type": "tool", "endpoint_path": "x"}],
                     }
                 ],
             }
@@ -267,7 +266,9 @@ class TestCommonModalBasic:
         """Test that modal.js file exists"""
         import os
 
-        modal_js_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "app", "assets", "view", "common", "modal.js")
+        modal_js_path = os.path.join(
+            os.path.dirname(__file__), "..", "..", "..", "app", "assets", "view", "common", "modal.js"
+        )
         assert os.path.exists(modal_js_path)
 
         # Check file contains expected functions
@@ -349,7 +350,9 @@ def test_modal_and_sync_integration(app):
         # Check that modal JavaScript exists
         import os
 
-        modal_js_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "app", "assets", "view", "common", "modal.js")
+        modal_js_path = os.path.join(
+            os.path.dirname(__file__), "..", "..", "..", "app", "assets", "view", "common", "modal.js"
+        )
         assert os.path.exists(modal_js_path)
 
         # Both features are successfully integrated

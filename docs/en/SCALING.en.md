@@ -4,7 +4,7 @@
 
 AccelMCP runs both single-host and multi-host deployments **from the same image**.
 By splitting the roles (WEB admin UI / MCP endpoint) into separate containers and sharing
-Streamable HTTP sessions through Redis, the MCP endpoint can be scaled horizontally on its own.
+legacy Streamable HTTP sessions through Redis, the MCP endpoint can be scaled horizontally on its own.
 
 ## Container Layout
 
@@ -13,7 +13,7 @@ Streamable HTTP sessions through Redis, the MCP endpoint can be scaled horizonta
 | `caddy` | Reverse proxy / TLS  | Routes by path to `web` and `mcp`            |
 | `web`   | Admin UI + REST API  | Runs DB migrations on startup                |
 | `mcp`   | MCP endpoint         | Same image as `web`; does NOT run migrations |
-| `redis` | Shared session store | Holds Streamable HTTP sessions               |
+| `redis` | Shared session store | Holds legacy Streamable HTTP sessions        |
 | `db`    | PostgreSQL           | Application data                             |
 
 `web` and `mcp` use the **same image and the same app** (all blueprints registered); Caddy routes
@@ -26,7 +26,7 @@ Routing is by **path**, regardless of hostname.
 
 | Path                                                                      | Routed to |
 | ------------------------------------------------------------------------- | --------- |
-| `/mcp`, `/mcp/<subdomain>`, `/<identifier>/mcp`, `/admin/mcp`, `/tools/*` | `mcp`     |
+| `/mcp`, `/<identifier>/mcp`, `/admin/mcp` | `mcp`     |
 | Everything else (`/`, `/dashboard`, `/api/*`, `/assets/*`, etc.)          | `web`     |
 
 Caddy accepts both `localhost` (or `ACCEL_MCP_DOMAIN`) and the local-development domain
@@ -133,19 +133,30 @@ The Flask dev server binds directly to port 5000, so access it without TLS
 
 ## 2. About the session store (Redis)
 
-Streamable HTTP validates the `Mcp-Session-Id` issued at `initialize` on subsequent requests.
-When the MCP endpoint runs as **multiple replicas / multiple hosts**, a follow-up request routed to
-a different replica can no longer recognize the session, so the session must live in a shared store.
+Stateless requests from the `2026-07-28` protocol do not require a session. Redis is therefore
+not required for MCP communication when only stateless clients are used.
+
+Legacy clients using the `2024-11-05` protocol send the `Mcp-Session-Id` issued at `initialize`
+on subsequent requests. When the MCP endpoint runs as **multiple replicas / multiple hosts**, a
+follow-up request routed to a different replica must still recognize that session, so it must live
+in a shared store.
 
 - When `REDIS_URL` is **set**: sessions are stored in Redis (shared).
   - Example: `REDIS_URL=redis://redis:6379/0`
   - Even with multiple `mcp` replicas, any replica can validate the session.
 - When `REDIS_URL` is **unset**: sessions are stored in process memory.
-  - No extra infrastructure required. This is sufficient for **single-host, single-process** runs.
-  - Not usable with multiple replicas, since sessions are not shared between them.
+  - No extra infrastructure required. This is sufficient for legacy clients on **single-host,
+    single-process** runs.
+  - Not usable for legacy clients with multiple replicas, since sessions are not shared between them.
 
 `compose.yaml` passes `REDIS_URL=redis://redis:6379/0` by default. To run a single-instance setup
 without Redis, leave `REDIS_URL` empty.
+
+> **Note:** With `FLASK_ENV=production`, gunicorn starts with `-w 4` (four processes), so even a
+> single container has four separate memories. If `REDIS_URL` is empty, a legacy client's session
+> gets `Invalid Mcp-Session-Id` (400) whenever a request lands on another process. Use Redis, or
+> run gunicorn with `-w 1`, when legacy clients are involved. Rate-limit counters are likewise
+> shared through Redis when `REDIS_URL` is set.
 
 ## 3. Scaling only the MCP endpoint
 
@@ -155,8 +166,9 @@ To add replicas on the same host:
 docker compose up -d --scale mcp=3
 ```
 
-(Caddy's `reverse_proxy mcp:5000` load-balances across replicas via Docker DNS round-robin. Because
-sessions are shared through `REDIS_URL`, any replica that receives a follow-up request stays consistent.)
+(Caddy's `reverse_proxy mcp:5000` load-balances across replicas via Docker DNS round-robin. For
+legacy clients, sharing sessions through `REDIS_URL` lets any replica handle a follow-up request
+consistently.)
 
 ## 4. Spreading across multiple hosts
 

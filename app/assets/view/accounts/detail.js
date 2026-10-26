@@ -1,12 +1,9 @@
 // accounts/detail.js - Account Detail Page
-const accountId = parseInt(window.location.pathname.split('/')[2]);
-let allServices = [];
-let allCapabilities = [];
+const accountId = Number.parseInt(window.location.pathname.split('/')[2], 10);
 let currentAccount = null;
 
 async function loadAccount() {
-    const response = await fetch(`/api/accounts/${accountId}`);
-    const account = await response.json();
+    const account = await AppApi.request(`/api/accounts/${accountId}`);
     currentAccount = account;
     
     document.getElementById('name').value = account.name;
@@ -27,16 +24,16 @@ async function loadAccount() {
         : '';
     container.innerHTML = `
         <div class="detail-section">
-            <h2>${account.name} ${systemBadge}</h2>
+            <h2>${AppDom.escapeHtml(account.name)} ${systemBadge}</h2>
             ${account.is_system ? '<p class="text-muted">このアカウントは Admin MCP エンドポイントの認証に使用されます。削除できません。</p>' : ''}
         </div>
         
         <div class="detail-section">
             <h3>${t('account_bearer_token')}</h3>
             <div class="token-display" style="display: flex; gap: 10px; align-items: center;">
-                <code style="flex: 1; padding: 10px; background: #f5f5f5; border-radius: 4px; overflow-x: auto;">${account.bearer_token}</code>
-                <button onclick="copyToken('${account.bearer_token}')" class="btn btn-sm btn-secondary">${t('account_copy_token')}</button>
-                <button onclick="regenerateToken()" class="btn btn-sm btn-warning">${t('account_regenerate_token')}</button>
+                <code style="flex: 1; padding: 10px; background: #f5f5f5; border-radius: 4px; overflow-x: auto;">${AppDom.escapeHtml(account.bearer_token)}</code>
+                <button type="button" data-action="copy-token" class="btn btn-sm btn-secondary">${t('account_copy_token')}</button>
+                <button type="button" data-action="regenerate-token" class="btn btn-sm btn-warning">${t('account_regenerate_token')}</button>
             </div>
             ${account.is_system ? '<small class="text-muted">トークンを再発行すると MCP クライアント側の設定も更新が必要です。</small>' : ''}
         </div>
@@ -44,7 +41,7 @@ async function loadAccount() {
         ${account.notes ? `
         <div class="detail-section">
             <h3>${t('account_notes_label')}</h3>
-            <p style="white-space: pre-wrap;">${account.notes}</p>
+            <p style="white-space: pre-wrap;">${AppDom.escapeHtml(account.notes)}</p>
         </div>
         ` : ''}
         
@@ -63,8 +60,8 @@ async function loadAccount() {
     `;
 }
 
-async function copyToken(token) {
-    navigator.clipboard.writeText(token);
+async function copyToken() {
+    await navigator.clipboard.writeText(currentAccount.bearer_token);
     await modal.success(t('account_token_copied'));
 }
 
@@ -80,13 +77,9 @@ async function regenerateToken() {
     if (!confirmed) return;
     
     try {
-        const response = await fetch(`/api/accounts/${accountId}/regenerate_token`, { method: 'POST' });
-        if (response.ok) {
-            await modal.success(t('account_token_regenerated'));
-            await loadAccount();
-        } else {
-            await modal.error('トークンの再発行に失敗しました');
-        }
+        await AppApi.request(`/api/accounts/${accountId}/regenerate_token`, { method: 'POST' });
+        await modal.success(t('account_token_regenerated'));
+        await loadAccount();
     } catch (error) {
         console.error('Error regenerating token:', error);
         await modal.error('トークンの再発行に失敗しました');
@@ -101,30 +94,32 @@ async function regenerateToken() {
     // Setup form submit handler
     document.getElementById('edit-form').addEventListener('submit', async (e) => {
         e.preventDefault();
-        
-        const formData = new FormData(e.target);
-        const data = {
-            notes: formData.get('notes')
-        };
 
-        // Only include name for non-system accounts
-        if (!currentAccount || !currentAccount.is_system) {
-            data.name = formData.get('name');
-        }
-        
-        const response = await fetch(`/api/accounts/${accountId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
-        });
-        
-        if (response.ok) {
+        try {
+            const formData = new FormData(e.target);
+            const data = {
+                notes: formData.get('notes')
+            };
+
+            if (!currentAccount || !currentAccount.is_system) {
+                data.name = formData.get('name');
+            }
+
+            await AppApi.request(`/api/accounts/${accountId}`, {
+                method: 'PUT',
+                body: JSON.stringify(data)
+            });
             await modal.success(t('account_update_success'));
-            loadAccount();
-        } else {
-            const error = await response.json();
-            await modal.error(t('account_update_failed') + ': ' + (error.error || t('error_unknown')));
+            await loadAccount();
+        } catch (error) {
+            await modal.error(t('account_update_failed') + ': ' + error.message);
         }
+    });
+
+    document.addEventListener('click', (event) => {
+        const action = event.target.closest('[data-action]')?.dataset.action;
+        if (action === 'copy-token') copyToken();
+        if (action === 'regenerate-token') regenerateToken();
     });
 })();
 

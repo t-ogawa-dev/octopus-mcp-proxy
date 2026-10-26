@@ -6,23 +6,25 @@ Handles logging of admin CRUD operations for security audit trails
 import contextlib
 import json
 import logging
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from functools import wraps
 
 from flask import request, session
 
+from app.services.background import BoundedExecutor
+
 logger = logging.getLogger(__name__)
 
 # Thread pool for async log writing
-_executor = ThreadPoolExecutor(max_workers=2)
+_executor = BoundedExecutor(max_workers=2, max_pending=1000, name="audit-log")
 
 
 def _get_client_ip():
-    """Get client IP address from request"""
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
+    """Get client IP address from request.
+
+    X-Forwarded-For is resolved by ProxyFix only for the configured number of trusted
+    proxies (TRUSTED_PROXY_COUNT), so a client cannot spoof its address with the header.
+    """
     return request.remote_addr or "0.0.0.0"
 
 
@@ -39,14 +41,16 @@ def _log_admin_action(
     """Log admin action asynchronously (or synchronously in test mode)"""
     import os
 
+    from flask import current_app
+
+    # Captured here because the worker thread has no application context of its own
+    app = current_app._get_current_object()
+
     def _write_log():
         try:
-            from flask import current_app
-
             from app.models.models import AdminActionLog, db
 
-            # In test mode, use current app context (synchronous)
-            if os.environ.get("TESTING") or current_app.config.get("TESTING"):
+            with app.app_context():
                 log_entry = AdminActionLog(
                     created_at=datetime.now(timezone.utc).replace(tzinfo=None),
                     admin_username=admin_username,
@@ -61,31 +65,11 @@ def _log_admin_action(
                 db.session.add(log_entry)
                 db.session.commit()
                 logger.debug(f"Admin action logged: {admin_username} {action_type} {resource_type} #{resource_id}")
-            else:
-                # Production mode: create new app context (asynchronous)
-                from app import create_app
-
-                app = create_app()
-                with app.app_context():
-                    log_entry = AdminActionLog(
-                        created_at=datetime.now(timezone.utc).replace(tzinfo=None),
-                        admin_username=admin_username,
-                        action_type=action_type,
-                        resource_type=resource_type,
-                        resource_id=resource_id,
-                        resource_name=resource_name,
-                        changes=json.dumps(changes, ensure_ascii=False) if changes else None,
-                        ip_address=ip_address,
-                        user_agent=user_agent,
-                    )
-                    db.session.add(log_entry)
-                    db.session.commit()
-                    logger.debug(f"Admin action logged: {admin_username} {action_type} {resource_type} #{resource_id}")
         except Exception as e:
             logger.error(f"Failed to log admin action: {e}")
 
     # In test mode, execute synchronously
-    if os.environ.get("TESTING"):
+    if os.environ.get("TESTING") or app.config.get("TESTING"):
         _write_log()
     else:
         _executor.submit(_write_log)

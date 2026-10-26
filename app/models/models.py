@@ -43,10 +43,12 @@ class AdminCredentials(db.Model):
 
     def set_password(self, plain_password: str) -> None:
         from werkzeug.security import generate_password_hash
+
         self.password_hash = generate_password_hash(plain_password)
 
     def check_password(self, plain_password: str) -> bool:
         from werkzeug.security import check_password_hash
+
         return check_password_hash(self.password_hash, plain_password)
 
     def to_dict(self):
