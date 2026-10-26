@@ -1,8 +1,9 @@
 (function () {
+    // Quotes are escaped too so the result is safe inside attribute values
+    const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+
     function escapeHtml(value) {
-        const element = document.createElement('span');
-        element.textContent = value == null ? '' : String(value);
-        return element.innerHTML;
+        return (value == null ? '' : String(value)).replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch]);
     }
 
     function safeHttpUrl(value) {

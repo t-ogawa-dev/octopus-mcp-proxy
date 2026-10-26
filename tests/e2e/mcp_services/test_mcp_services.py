@@ -176,9 +176,7 @@ class TestMcpServiceDetailPage:
 
         # Navigate to detail
         logged_in_page.goto(e2e_url("/mcp-services"))
-        detail_link = logged_in_page.locator(
-            'a[href*="/mcp-services/"]:not([href*="/edit"]):not([href*="/new"])'
-        ).first
+        detail_link = logged_in_page.locator('a[href*="/mcp-services/"]:not([href*="/edit"]):not([href*="/new"])').first
         if detail_link.is_visible():
             detail_link.click()
 
@@ -248,7 +246,6 @@ class TestMcpServiceEditPage:
             # Submit
             logged_in_page.click('button[type="submit"]')
             logged_in_page.wait_for_url(e2e_url("/mcp-services*"))
-
 
     def test_toggle_mcp_service(self, logged_in_page: Page):
         """MCP Serviceの有効/無効切り替え"""

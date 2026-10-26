@@ -14,6 +14,20 @@ HTTP/stdio compatible MCP server with API/MCP relay functionality and user-based
 - **Web Admin Interface**: Manage Services, Capabilities, and Accounts
 - **Bearer Token Authentication**: Per-account token generation
 
+## MCP Protocol Versions
+
+| Protocol version      | Support                                             |
+| --------------------- | --------------------------------------------------- |
+| `2026-07-28` (latest) | Supported: stateless requests and `server/discover` |
+| `2024-11-05` (legacy) | Supported for backward compatibility                |
+
+The `2026-07-28` protocol allows clients to call methods such as `tools/list` and
+`tools/call` without an `initialize` handshake or `Mcp-Session-Id` header. The
+`server/discover` method returns the supported protocol versions without creating a session.
+
+Legacy clients using the `2024-11-05` initialize-and-session flow remain supported. If a
+client sends a `Mcp-Session-Id`, it is validated; invalid session IDs are rejected.
+
 ## Container Layout
 
 Octopus MCP Proxy is composed of the following containers (`web` and `mcp` share the same image):
@@ -21,11 +35,11 @@ Octopus MCP Proxy is composed of the following containers (`web` and `mcp` share
 - `caddy`: Reverse proxy / TLS (routes by path to `web` and `mcp`)
 - `web`: Admin UI + REST API (runs DB migrations on startup)
 - `mcp`: MCP endpoint (can be scaled to multiple replicas / separate hosts)
-- `redis`: Shared store for Streamable HTTP sessions
+- `redis`: Shared store for legacy Streamable HTTP sessions
 - `db`: PostgreSQL
 
 Both single-host (all-in-one) and multi-host (WEB/MCP/Redis split across servers) run from the
-**same compose definition**. MCP sessions are shared via Redis when `REDIS_URL` is set, and fall
+**same compose definition**. Legacy MCP sessions are shared via Redis when `REDIS_URL` is set, and fall
 back to in-process memory when it is unset. See [Scaling & Containers](docs/en/SCALING.en.md) for details.
 
 ## Starting the Server

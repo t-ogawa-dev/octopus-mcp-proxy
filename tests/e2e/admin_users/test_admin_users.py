@@ -123,12 +123,14 @@ class TestAdminUserDetailPage:
         self._create_admin_user(page, username)
 
         page.click(f'a:has-text("{username}")')
-        page.fill('#username', new_username)
+        # The page fills #username asynchronously; typing earlier gets overwritten by that load
+        expect(page.locator("#username")).to_have_value(username)
+        page.fill("#username", new_username)
         page.click('button[type="submit"]')
 
         # Wait for the success modal/alert to confirm the save
         page.wait_for_timeout(500)
-        expect(page.locator('#username')).to_have_value(new_username)
+        expect(page.locator("#username")).to_have_value(new_username)
 
     def test_delete_admin_user(self, page: Page):
         """管理者アカウントを削除できる（自分以外）"""
@@ -136,10 +138,10 @@ class TestAdminUserDetailPage:
         self._create_admin_user(page, username)
 
         page.click(f'a:has-text("{username}")')
-        page.click('#delete-btn')
+        page.click("#delete-btn")
 
         # Confirm via the custom modal dialog
-        page.click('#commonModalConfirm')
+        page.click("#commonModalConfirm")
 
         # Should redirect back to the list, and the deleted account should be gone
         page.wait_for_url(re.compile(r"/admin-users$"))
@@ -152,8 +154,8 @@ class TestAdminUserDetailPage:
         # The currently logged-in account is "admin"
         if page.locator('a:has-text("admin")').count() > 0:
             page.click('a:has-text("admin")')
-            page.click('#delete-btn')
-            page.click('#commonModalConfirm')
+            page.click("#delete-btn")
+            page.click("#commonModalConfirm")
 
             # Should show an error modal/alert instead of redirecting away
             page.wait_for_timeout(500)

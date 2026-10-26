@@ -8,7 +8,7 @@ import logging
 
 from flask import Blueprint, Response, current_app, jsonify, request
 
-from app.models.models import Capability, ConnectionAccount, McpService, Service, db
+from app.models.models import ConnectionAccount, McpService, db
 from app.services.mcp_handler import MCPHandler
 from app.services.mcp_logger import create_log_context_from_request, log_mcp_request
 from app.services.session_store import get_session_store
@@ -64,7 +64,7 @@ def authenticate_bearer_token(log_context=None):
     account = ConnectionAccount.query.filter_by(bearer_token=bearer_token).first()
 
     if not account:
-        logger.warning(f"Invalid bearer token: {bearer_token[:10]}...")
+        logger.warning("Invalid bearer token")
 
         # Log authentication failure
         if log_context:
@@ -110,6 +110,9 @@ def _build_sse_response(data: dict, session_id: str | None = None) -> Response:
 # endpoint can be scaled across replicas/hosts), otherwise process-local in-memory.
 _SESSION_TTL_SECONDS = 3600  # 1 hour
 
+# Methods a 2026-07-28 client may send without an established session
+_STATELESS_METHODS = frozenset({"initialize", "server/discover"})
+
 
 def _register_session(session_id: str) -> None:
     """Register a new StreamableHTTP session ID with expiry."""
@@ -126,86 +129,58 @@ def _remove_session(session_id: str) -> None:
     get_session_store("mcp").remove(session_id)
 
 
-@mcp_bp.route("/mcp", methods=["POST", "GET", "DELETE"])
-def mcp_subdomain_endpoint():
+def _build_capabilities_response(account, mcp_service) -> dict:
+    """Build the GET /mcp body from the same permission-filtered list as tools/list."""
+    tools_response = mcp_handler.handle_mcp_service_request(
+        account, mcp_service, {"jsonrpc": "2.0", "id": 0, "method": "tools/list"}
+    )
+    tools = tools_response.get("result", {}).get("tools", [])
+    return {"capabilities": {"tools": tools}, "serverInfo": {"name": mcp_service.name, "version": "1.0.0"}}
+
+
+def _parse_mcp_request(log_context):
+    """Read the JSON-RPC body of a POST and copy its metadata into the log context.
+
+    Returns the parsed body (None when it is not valid JSON) and the JSON-RPC id.
     """
-    MCP endpoint with subdomain routing
-    Access: <subdomain>.lvh.me/mcp or localhost:5000/mcp?subdomain=<subdomain>
-
-    Handles:
-    - GET: Returns capabilities list for the service
-    - POST: Processes MCP tool calls
-    """
-    logger.info(f"MCP request: {request.method} {request.url}")
-
-    # Initialize log context
-    log_context = create_log_context_from_request(request)
-
-    # Get request ID if available
-    request_id = None
-    mcp_request = None
-    if request.method == "POST":
-        try:
-            mcp_request = request.get_json()
-            if mcp_request:
-                request_id = mcp_request.get("id")
-                log_context.request_id = str(request_id) if request_id else None
-                log_context.mcp_method = mcp_request.get("method", "unknown")
-                log_context.request_body = json.dumps(mcp_request, ensure_ascii=False)
-
-                # Extract tool name for tools/call
-                if log_context.mcp_method == "tools/call":
-                    params = mcp_request.get("params", {})
-                    log_context.tool_name = params.get("name")
-        except Exception:
-            pass
-    else:
+    if request.method != "POST":
         log_context.mcp_method = request.method  # "GET", "DELETE", etc.
+        return None, None
 
-    # Extract subdomain
-    subdomain = get_subdomain_from_request()
-    if not subdomain:
-        logger.warning("Subdomain not specified in request")
-        error_response = {
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "error": {
-                "code": -32600,
-                "message": "Subdomain not specified. Use <subdomain>.lvh.me/mcp or add ?subdomain=<subdomain>",
-            },
-        }
-        log_mcp_request(
-            current_app._get_current_object(),
-            log_context,
-            response_body=json.dumps(error_response, ensure_ascii=False),
-            status_code=400,
-            is_success=False,
-            error_code=-32600,
-            error_message="Subdomain not specified",
-        )
-        return jsonify(error_response), 400
+    # silent=True only suppresses JSON parse errors; oversized bodies still raise 413
+    mcp_request = request.get_json(silent=True)
+    if not isinstance(mcp_request, dict):
+        return mcp_request, None
 
-    logger.debug(f"Processing request for subdomain: {subdomain}")
+    request_id = mcp_request.get("id")
+    log_context.request_id = str(request_id) if request_id is not None else None
+    log_context.mcp_method = mcp_request.get("method", "unknown")
+    log_context.request_body = json.dumps(mcp_request, ensure_ascii=False)
 
-    # Get MCP service by subdomain
-    mcp_service = McpService.query.filter_by(identifier=subdomain).first()
-    if not mcp_service:
-        error_response = {
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "error": {"code": -32001, "message": f"MCP service not found for subdomain: {subdomain}"},
-        }
-        log_mcp_request(
-            current_app._get_current_object(),
-            log_context,
-            response_body=json.dumps(error_response, ensure_ascii=False),
-            status_code=404,
-            is_success=False,
-            error_code=-32001,
-            error_message=f"MCP service not found for subdomain: {subdomain}",
-        )
-        return jsonify(error_response), 404
+    # Extract tool name for tools/call
+    if log_context.mcp_method == "tools/call":
+        params = mcp_request.get("params") or {}
+        log_context.tool_name = params.get("name") if isinstance(params, dict) else None
+    return mcp_request, request_id
 
+
+def _error_response(log_context, request_id, code: int, message: str, status: int, log_message: str | None = None):
+    """Return a JSON-RPC error response and record it in the connection log."""
+    error_response = {"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}}
+    log_mcp_request(
+        current_app._get_current_object(),
+        log_context,
+        response_body=json.dumps(error_response, ensure_ascii=False),
+        status_code=status,
+        is_success=False,
+        error_code=code,
+        error_message=log_message or message,
+    )
+    return jsonify(error_response), status
+
+
+def _serve_mcp_service(mcp_service, log_context, mcp_request, request_id):
+    """Handle an MCP request once the target MCP service has been resolved (shared by both routing styles)."""
     # Set MCP service info in log context
     log_context.mcp_service_id = mcp_service.id
     log_context.mcp_service_name = mcp_service.name
@@ -216,7 +191,7 @@ def mcp_subdomain_endpoint():
     if mcp_service.access_control == "restricted":
         account, error, status = authenticate_bearer_token(log_context)
         if error:
-            logger.error(f"Authentication failed for subdomain {subdomain}")
+            logger.warning("Authentication failed for MCP service %s", mcp_service.identifier)
             error_response = {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32000, "message": error["error"]}}
             # Log already recorded by authenticate_bearer_token
             return jsonify(error_response), status
@@ -224,9 +199,6 @@ def mcp_subdomain_endpoint():
         # Set account info in log context
         log_context.account_id = account.id
         log_context.account_name = account.name
-
-    # Get apps (services) under this MCP service
-    services = Service.query.filter_by(mcp_service_id=mcp_service.id).all()
 
     # Handle DELETE - session termination (StreamableHTTP spec)
     if request.method == "DELETE":
@@ -242,15 +214,7 @@ def mcp_subdomain_endpoint():
         # StreamableHTTP clients expect a server-push SSE stream; we don't support it (spec: return 405)
         if _is_streamable_http_request(request):
             return Response("", status=405)
-        all_capabilities = []
-        for service in services:
-            capabilities = Capability.query.filter_by(app_id=service.id).all()
-            all_capabilities.extend([cap.to_dict() for cap in capabilities])
-
-        response = {
-            "jsonrpc": "2.0",
-            "result": {"capabilities": all_capabilities, "serverInfo": {"name": mcp_service.name, "version": "1.0.0"}},
-        }
+        response = _build_capabilities_response(account, mcp_service)
         log_mcp_request(
             current_app._get_current_object(),
             log_context,
@@ -262,47 +226,34 @@ def mcp_subdomain_endpoint():
 
     # Handle POST request - process MCP request
     if not mcp_request:
-        error_response = {"jsonrpc": "2.0", "id": 0, "error": {"code": -32700, "message": "Parse error: Invalid JSON"}}
-        log_mcp_request(
-            current_app._get_current_object(),
+        # JSON-RPC requires a null id when the request id could not be read
+        return _error_response(log_context, None, -32700, "Parse error: Invalid JSON", 400)
+
+    # JSON-RPC batches were removed from the MCP spec (2025-06-18), so only single objects are accepted
+    if not isinstance(mcp_request, dict):
+        return _error_response(
             log_context,
-            response_body=json.dumps(error_response, ensure_ascii=False),
-            status_code=400,
-            is_success=False,
-            error_code=-32700,
-            error_message="Parse error: Invalid JSON",
+            None,
+            -32600,
+            "Invalid Request: batch requests are not supported",
+            400,
+            "Batch requests are not supported",
         )
-        return jsonify(error_response), 400
+
+    method = mcp_request.get("method")
+    if not isinstance(method, str):
+        return _error_response(log_context, request_id, -32600, "Invalid Request: method must be a string", 400)
 
     # 2026-07-28 stateless clients omit Mcp-Session-Id entirely; only reject stale/forged IDs.
-    _stateless_methods = {"initialize", "server/discover"}
-    if _is_streamable_http_request(request) and mcp_request.get("method") not in _stateless_methods:
+    if method not in _STATELESS_METHODS:
         incoming_session_id = request.headers.get("Mcp-Session-Id")
         if incoming_session_id and not _is_valid_session(incoming_session_id):
-            error_response = {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "error": {"code": -32600, "message": "Invalid Mcp-Session-Id"},
-            }
-            log_mcp_request(
-                current_app._get_current_object(),
-                log_context,
-                response_body=json.dumps(error_response, ensure_ascii=False),
-                status_code=400,
-                is_success=False,
-                error_code=-32600,
-                error_message="Invalid Mcp-Session-Id",
-            )
-            return jsonify(error_response), 400
+            return _error_response(log_context, request_id, -32600, "Invalid Mcp-Session-Id", 400)
 
-    # Check if this is a notification (no id field or method starts with 'notifications/')
-    is_notification = "id" not in mcp_request or mcp_request.get("method", "").startswith("notifications/")
-
-    if is_notification:
-        # Process notification but don't return a response
-        logger.info(f"Received notification: {mcp_request.get('method')}")
+    # Notifications (no id, or notifications/*) get no JSON-RPC response
+    if "id" not in mcp_request or method.startswith("notifications/"):
+        logger.info("Received notification: %s", method)
         log_mcp_request(current_app._get_current_object(), log_context, status_code=202, is_success=True)
-        # For notifications, return 204 No Content
         return Response("", status=202, mimetype="application/json")
 
     # Route to MCP handler - pass mcp_service for multi-service handling
@@ -317,7 +268,8 @@ def mcp_subdomain_endpoint():
         current_app._get_current_object(),
         log_context,
         response_body=json.dumps(response, ensure_ascii=False),
-        status_code=200 if is_success else 400,
+        # JSON-RPC errors are still delivered with HTTP 200, so log the status actually sent
+        status_code=200,
         is_success=is_success,
         error_code=error_code,
         error_message=error_message,
@@ -326,13 +278,48 @@ def mcp_subdomain_endpoint():
     # Return SSE stream if client requests StreamableHTTP, otherwise plain JSON
     if _is_streamable_http_request(request):
         session_id = None
-        if mcp_request.get("method") == "initialize":
+        if method == "initialize":
             session_id = response.get("result", {}).get("sessionId")
             if session_id:
                 _register_session(session_id)
         return _build_sse_response(response, session_id=session_id)
 
     return jsonify(response)
+
+
+@mcp_bp.route("/mcp", methods=["POST", "GET", "DELETE"])
+def mcp_subdomain_endpoint():
+    """
+    MCP endpoint with subdomain routing
+    Access: <subdomain>.lvh.me/mcp or localhost:5000/mcp?subdomain=<subdomain>
+
+    Handles:
+    - GET: Returns capabilities list for the service
+    - POST: Processes MCP tool calls
+    """
+    logger.info("MCP request: %s %s", request.method, request.path)
+    log_context = create_log_context_from_request(request)
+    mcp_request, request_id = _parse_mcp_request(log_context)
+
+    subdomain = get_subdomain_from_request()
+    if not subdomain:
+        logger.warning("Subdomain not specified in request")
+        return _error_response(
+            log_context,
+            request_id,
+            -32600,
+            "Subdomain not specified. Use <subdomain>.lvh.me/mcp or add ?subdomain=<subdomain>",
+            400,
+            "Subdomain not specified",
+        )
+
+    mcp_service = McpService.query.filter_by(identifier=subdomain).first()
+    if not mcp_service:
+        return _error_response(
+            log_context, request_id, -32001, f"MCP service not found for subdomain: {subdomain}", 404
+        )
+
+    return _serve_mcp_service(mcp_service, log_context, mcp_request, request_id)
 
 
 @mcp_bp.route("/<path_identifier>/mcp", methods=["POST", "GET", "DELETE"])
@@ -345,347 +332,14 @@ def mcp_path_endpoint(path_identifier):
     - GET: Returns capabilities list for the service
     - POST: Processes MCP tool calls
     """
-    logger.info(f"MCP path-based request: {request.method} {request.url}")
-    logger.debug(f"Path identifier: {path_identifier}")
-
-    # Initialize log context
+    logger.info("MCP path-based request: %s %s", request.method, request.path)
     log_context = create_log_context_from_request(request)
+    mcp_request, request_id = _parse_mcp_request(log_context)
 
-    # Get request ID if available
-    request_id = None
-    mcp_request = None
-    if request.method == "POST":
-        try:
-            mcp_request = request.get_json()
-            if mcp_request:
-                request_id = mcp_request.get("id")
-                log_context.request_id = str(request_id) if request_id else None
-                log_context.mcp_method = mcp_request.get("method", "unknown")
-                log_context.request_body = json.dumps(mcp_request, ensure_ascii=False)
-
-                # Extract tool name for tools/call
-                if log_context.mcp_method == "tools/call":
-                    params = mcp_request.get("params", {})
-                    log_context.tool_name = params.get("name")
-        except Exception:
-            pass
-    else:
-        log_context.mcp_method = request.method  # "GET", "DELETE", etc.
-
-    # Get MCP service by subdomain with routing_type='path'
     mcp_service = McpService.query.filter_by(identifier=path_identifier, routing_type="path").first()
-
     if not mcp_service:
-        error_response = {
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "error": {"code": -32001, "message": f"MCP service not found for path: {path_identifier}"},
-        }
-        log_mcp_request(
-            current_app._get_current_object(),
-            log_context,
-            response_body=json.dumps(error_response, ensure_ascii=False),
-            status_code=404,
-            is_success=False,
-            error_code=-32001,
-            error_message=f"MCP service not found for path: {path_identifier}",
+        return _error_response(
+            log_context, request_id, -32001, f"MCP service not found for path: {path_identifier}", 404
         )
-        return jsonify(error_response), 404
 
-    # Set MCP service info in log context
-    log_context.mcp_service_id = mcp_service.id
-    log_context.mcp_service_name = mcp_service.name
-    log_context.access_control = mcp_service.access_control
-
-    # Authenticate account - only required if access_control is 'restricted'
-    account = None
-    if mcp_service.access_control == "restricted":
-        account, error, status = authenticate_bearer_token(log_context)
-        if error:
-            logger.error(f"Authentication failed for path {path_identifier}")
-            error_response = {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32000, "message": error["error"]}}
-            # Log already recorded by authenticate_bearer_token
-            return jsonify(error_response), status
-
-        # Set account info in log context
-        log_context.account_id = account.id
-        log_context.account_name = account.name
-
-    # Get apps (services) under this MCP service
-    services = Service.query.filter_by(mcp_service_id=mcp_service.id).all()
-
-    # Handle DELETE - session termination (StreamableHTTP spec)
-    if request.method == "DELETE":
-        session_id = request.headers.get("Mcp-Session-Id")
-        if session_id and _is_valid_session(session_id):
-            _remove_session(session_id)
-            log_mcp_request(current_app._get_current_object(), log_context, status_code=200, is_success=True)
-            return Response("", status=200)
-        return Response("", status=404)
-
-    # Handle GET request - return capabilities from all services
-    if request.method == "GET":
-        # StreamableHTTP clients expect a server-push SSE stream; we don't support it (spec: return 405)
-        if _is_streamable_http_request(request):
-            return Response("", status=405)
-        all_capabilities = []
-        for service in services:
-            capabilities = Capability.query.filter_by(app_id=service.id).all()
-            all_capabilities.extend([cap.to_dict() for cap in capabilities])
-
-        response = {
-            "jsonrpc": "2.0",
-            "result": {"capabilities": all_capabilities, "serverInfo": {"name": mcp_service.name, "version": "1.0.0"}},
-        }
-        log_mcp_request(
-            current_app._get_current_object(),
-            log_context,
-            response_body=json.dumps(response, ensure_ascii=False),
-            status_code=200,
-            is_success=True,
-        )
-        return jsonify(response)
-
-    # Handle POST request - process MCP request
-    if not mcp_request:
-        error_response = {"jsonrpc": "2.0", "id": 0, "error": {"code": -32700, "message": "Parse error: Invalid JSON"}}
-        log_mcp_request(
-            current_app._get_current_object(),
-            log_context,
-            response_body=json.dumps(error_response, ensure_ascii=False),
-            status_code=400,
-            is_success=False,
-            error_code=-32700,
-            error_message="Parse error: Invalid JSON",
-        )
-        return jsonify(error_response), 400
-
-    # 2026-07-28 stateless clients omit Mcp-Session-Id entirely; only reject stale/forged IDs.
-    _stateless_methods = {"initialize", "server/discover"}
-    if _is_streamable_http_request(request) and mcp_request.get("method") not in _stateless_methods:
-        incoming_session_id = request.headers.get("Mcp-Session-Id")
-        if incoming_session_id and not _is_valid_session(incoming_session_id):
-            error_response = {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "error": {"code": -32600, "message": "Invalid Mcp-Session-Id"},
-            }
-            log_mcp_request(
-                current_app._get_current_object(),
-                log_context,
-                response_body=json.dumps(error_response, ensure_ascii=False),
-                status_code=400,
-                is_success=False,
-                error_code=-32600,
-                error_message="Invalid Mcp-Session-Id",
-            )
-            return jsonify(error_response), 400
-
-    # Check if this is a notification (no id field or method starts with 'notifications/')
-    is_notification = "id" not in mcp_request or mcp_request.get("method", "").startswith("notifications/")
-
-    if is_notification:
-        # Process notification but don't return a response
-        logger.info(f"Received notification: {mcp_request.get('method')}")
-        log_mcp_request(current_app._get_current_object(), log_context, status_code=202, is_success=True)
-        # For notifications, return 204 No Content
-        return Response("", status=202, mimetype="application/json")
-
-    # Route to MCP handler - pass mcp_service for multi-service handling
-    response = mcp_handler.handle_mcp_service_request(account, mcp_service, mcp_request)
-
-    # Determine if response is success or error
-    is_success = "error" not in response
-    error_code = response.get("error", {}).get("code") if not is_success else None
-    error_message = response.get("error", {}).get("message") if not is_success else None
-
-    log_mcp_request(
-        current_app._get_current_object(),
-        log_context,
-        response_body=json.dumps(response, ensure_ascii=False),
-        status_code=200 if is_success else 400,
-        is_success=is_success,
-        error_code=error_code,
-        error_message=error_message,
-    )
-
-    # Return SSE stream if client requests StreamableHTTP, otherwise plain JSON
-    if _is_streamable_http_request(request):
-        session_id = None
-        if mcp_request.get("method") == "initialize":
-            session_id = response.get("result", {}).get("sessionId")
-            if session_id:
-                _register_session(session_id)
-        return _build_sse_response(response, session_id=session_id)
-
-    return jsonify(response)
-
-
-@mcp_bp.route("/tools/<tool_id>", methods=["POST"])
-def mcp_tool_endpoint(tool_id):
-    """
-    Direct tool execution endpoint
-    Access: <subdomain>.lvh.me/tools/<tool_id>
-
-    Executes a specific tool/capability directly
-    """
-    # Initialize log context
-    log_context = create_log_context_from_request(request)
-    log_context.mcp_method = "tools/call"
-    log_context.tool_name = tool_id
-
-    # Extract subdomain
-    subdomain = get_subdomain_from_request()
-    if not subdomain:
-        error_response = {"jsonrpc": "2.0", "error": {"code": -32600, "message": "Subdomain not specified"}}
-        log_mcp_request(
-            current_app._get_current_object(),
-            log_context,
-            response_body=json.dumps(error_response, ensure_ascii=False),
-            status_code=400,
-            is_success=False,
-            error_code=-32600,
-            error_message="Subdomain not specified",
-        )
-        return jsonify(error_response), 400
-
-    # Authenticate account
-    account, error, status = authenticate_bearer_token()
-    if error:
-        error_response = {"jsonrpc": "2.0", "error": {"code": -32000, "message": error["error"]}}
-        log_mcp_request(
-            current_app._get_current_object(),
-            log_context,
-            response_body=json.dumps(error_response, ensure_ascii=False),
-            status_code=status,
-            is_success=False,
-            error_code=-32000,
-            error_message=error["error"],
-        )
-        return jsonify(error_response), status
-
-    # Set account info in log context
-    log_context.account_id = account.id
-    log_context.account_name = account.name
-    log_context.access_control = "restricted"
-
-    # Get service by subdomain
-    service = Service.query.filter_by(subdomain=subdomain).first()
-    if not service:
-        error_response = {
-            "jsonrpc": "2.0",
-            "error": {"code": -32001, "message": f"Service not found for subdomain: {subdomain}"},
-        }
-        log_mcp_request(
-            current_app._get_current_object(),
-            log_context,
-            response_body=json.dumps(error_response, ensure_ascii=False),
-            status_code=404,
-            is_success=False,
-            error_code=-32001,
-            error_message=f"Service not found for subdomain: {subdomain}",
-        )
-        return jsonify(error_response), 404
-
-    # Set app info in log context
-    log_context.app_id = service.id
-    log_context.app_name = service.name
-    if service.mcp_service:
-        log_context.mcp_service_id = service.mcp_service.id
-        log_context.mcp_service_name = service.mcp_service.name
-
-    # Get tool arguments from request
-    data = request.get_json() or {}
-    arguments = data.get("arguments", {})
-    log_context.request_body = json.dumps(data, ensure_ascii=False)
-
-    # Execute tool
-    response = mcp_handler.execute_tool_by_id(account, service, tool_id, arguments)
-
-    # Determine if response is success or error
-    is_success = "error" not in response
-    error_code = response.get("error", {}).get("code") if not is_success else None
-    error_message = response.get("error", {}).get("message") if not is_success else None
-
-    log_mcp_request(
-        current_app._get_current_object(),
-        log_context,
-        response_body=json.dumps(response, ensure_ascii=False),
-        status_code=200 if is_success else 400,
-        is_success=is_success,
-        error_code=error_code,
-        error_message=error_message,
-    )
-
-    return jsonify(response)
-
-
-@mcp_bp.route("/mcp/<subdomain>", methods=["POST"])
-def mcp_http_endpoint(subdomain):
-    """
-    Legacy HTTP MCP endpoint (backward compatibility)
-    Access: /mcp/<subdomain>
-    """
-    # Initialize log context
-    log_context = create_log_context_from_request(request)
-    log_context.mcp_method = "legacy_http"
-
-    # Authenticate account
-    account, error, status = authenticate_bearer_token()
-    if error:
-        log_mcp_request(
-            current_app._get_current_object(),
-            log_context,
-            response_body=json.dumps(error, ensure_ascii=False),
-            status_code=status,
-            is_success=False,
-            error_message=error.get("error"),
-        )
-        return jsonify(error), status
-
-    # Set account info in log context
-    log_context.account_id = account.id
-    log_context.account_name = account.name
-    log_context.access_control = "restricted"
-
-    # Get service by subdomain
-    service = Service.query.filter_by(subdomain=subdomain).first()
-    if not service:
-        error_response = {"error": "Service not found"}
-        log_mcp_request(
-            current_app._get_current_object(),
-            log_context,
-            response_body=json.dumps(error_response, ensure_ascii=False),
-            status_code=404,
-            is_success=False,
-            error_message="Service not found",
-        )
-        return jsonify(error_response), 404
-
-    # Set app info in log context
-    log_context.app_id = service.id
-    log_context.app_name = service.name
-    if service.mcp_service:
-        log_context.mcp_service_id = service.mcp_service.id
-        log_context.mcp_service_name = service.mcp_service.name
-
-    # Handle MCP request
-    mcp_request = request.get_json()
-    log_context.request_body = json.dumps(mcp_request, ensure_ascii=False) if mcp_request else None
-
-    response = mcp_handler.handle_http_request(account, service, mcp_request)
-
-    # Determine if response is success or error
-    is_success = "error" not in response
-    error_message = response.get("error") if not is_success else None
-
-    log_mcp_request(
-        current_app._get_current_object(),
-        log_context,
-        response_body=json.dumps(response, ensure_ascii=False),
-        status_code=200 if is_success else 400,
-        is_success=is_success,
-        error_message=error_message,
-    )
-
-    return jsonify(response)
+    return _serve_mcp_service(mcp_service, log_context, mcp_request, request_id)

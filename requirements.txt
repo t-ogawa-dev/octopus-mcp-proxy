@@ -1,8 +1,10 @@
 Flask==3.0.0
 Flask-SQLAlchemy==3.1.1
+SQLAlchemy==2.1.6
 Flask-Login==0.6.3
 Flask-CORS==4.0.0
 Flask-Migrate==4.0.5
+Flask-Limiter==3.5.0
 psycopg2-binary==2.9.9
 cryptography==41.0.7
 mcp>=1.0.0
@@ -26,7 +28,7 @@ playwright==1.40.0
 fakeredis==2.21.1
 
 # Code Quality
-mypy==1.8.0
+mypy==1.11.2
 ruff==0.3.0
 types-PyYAML==6.0.12.12
 types-requests==2.31.0.10

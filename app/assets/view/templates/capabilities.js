@@ -58,11 +58,11 @@ async function loadCapabilities() {
     }
     
     container.innerHTML = template.capabilities.map(cap => `
-        <div class="capability-card" data-capability-id="${cap.id}">
+        <div class="capability-card" data-capability-id="${Number(cap.id)}">
             <div class="capability-header">
                 <div class="capability-info">
-                    <div class="capability-name">${cap.name}</div>
-                    <span class="capability-type ${cap.capability_type}">${cap.capability_type}</span>
+                    <div class="capability-name">${AppDom.escapeHtml(cap.name)}</div>
+                    <span class="capability-type ${AppDom.escapeHtml(cap.capability_type)}">${AppDom.escapeHtml(cap.capability_type)}</span>
                 </div>
                 <div class="capability-actions">
                     ${!isBuiltin ? `<button type="button" class="btn-small btn-secondary" data-action="edit-capability" data-i18n="button_edit">${t('button_edit')}</button>` : ''}

@@ -18,84 +18,16 @@ function debounce(func, wait) {
     };
 }
 
-// Show error message
-function showError(message) {
-    const errorDiv = document.getElementById('form-error');
-    errorDiv.textContent = message;
-    errorDiv.style.display = 'block';
-    errorDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
-}
-
-// Hide error message
-function hideError() {
-    const errorDiv = document.getElementById('form-error');
-    errorDiv.style.display = 'none';
-}
-
 // Load accounts list
 async function loadAccounts() {
     const accounts = await AppApi.request('/api/accounts');
     
     const disabledSelect = document.getElementById('disabled-accounts');
     disabledSelect.innerHTML = accounts.map(account => 
-        `<option value="${account.id}">${account.name}</option>`
+        `<option value="${Number(account.id)}">${AppDom.escapeHtml(account.name)}</option>`
     ).join('');
     
     updateCounts();
-}
-
-function moveToEnabled() {
-    const disabledSelect = document.getElementById('disabled-accounts');
-    const enabledSelect = document.getElementById('enabled-accounts');
-    const selected = Array.from(disabledSelect.selectedOptions);
-    
-    selected.forEach(option => {
-        enabledSelect.appendChild(option);
-    });
-    
-    updateCounts();
-}
-
-function moveAllToEnabled() {
-    const disabledSelect = document.getElementById('disabled-accounts');
-    const enabledSelect = document.getElementById('enabled-accounts');
-    
-    Array.from(disabledSelect.options).forEach(option => {
-        enabledSelect.appendChild(option);
-    });
-    
-    updateCounts();
-}
-
-function moveToDisabled() {
-    const enabledSelect = document.getElementById('enabled-accounts');
-    const disabledSelect = document.getElementById('disabled-accounts');
-    const selected = Array.from(enabledSelect.selectedOptions);
-    
-    selected.forEach(option => {
-        disabledSelect.appendChild(option);
-    });
-    
-    updateCounts();
-}
-
-function moveAllToDisabled() {
-    const enabledSelect = document.getElementById('enabled-accounts');
-    const disabledSelect = document.getElementById('disabled-accounts');
-    
-    Array.from(enabledSelect.options).forEach(option => {
-        disabledSelect.appendChild(option);
-    });
-    
-    updateCounts();
-}
-
-function updateCounts() {
-    const enabledCount = document.getElementById('enabled-accounts').options.length;
-    const disabledCount = document.getElementById('disabled-accounts').options.length;
-    
-    document.getElementById('enabled-count').textContent = enabledCount;
-    document.getElementById('disabled-count').textContent = disabledCount;
 }
 
 function toggleCapabilityType() {
@@ -168,29 +100,15 @@ function toggleCapabilityType() {
     }
 }
 
-function toggleBodyType() {
-    const method = document.getElementById('method').value;
-    const bodyKeyValue = document.getElementById('body-key-value');
-    const bodyJson = document.getElementById('body-json');
-    
-    if (method === 'GET') {
-        bodyKeyValue.style.display = 'block';
-        bodyJson.style.display = 'none';
-    } else {
-        bodyKeyValue.style.display = 'none';
-        bodyJson.style.display = 'block';
-    }
-}
-
 function addHeaderRow(key = '', value = '') {
     const container = document.getElementById('headers-container');
     const row = document.createElement('div');
     row.className = 'key-value-row';
     row.style.cssText = 'display: flex; gap: 10px; margin-bottom: 10px; align-items: center;';
     row.innerHTML = `
-        <input type="text" placeholder="${t('form_key_placeholder')}" value="${key}" 
+        <input type="text" placeholder="${t('form_key_placeholder')}" value="${AppDom.escapeHtml(key)}" 
                style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-        <input type="text" placeholder="${t('form_value_placeholder')}" value="${value}" 
+        <input type="text" placeholder="${t('form_value_placeholder')}" value="${AppDom.escapeHtml(value)}" 
                style="flex: 2; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
         <button type="button" data-action="remove-row" class="btn btn-sm btn-danger">${t('button_delete')}</button>
     `;
@@ -205,9 +123,9 @@ function addFixedParamRow(key = '', value = '') {
     row.className = 'key-value-row';
     row.style.cssText = 'display: flex; gap: 10px; margin-bottom: 10px; align-items: center;';
     row.innerHTML = `
-        <input type="text" placeholder="Key" value="${key}" 
+        <input type="text" placeholder="Key" value="${AppDom.escapeHtml(key)}" 
                style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-        <input type="text" placeholder="Value (or {{VARIABLE}})" value="${value}" 
+        <input type="text" placeholder="Value (or {{VARIABLE}})" value="${AppDom.escapeHtml(value)}" 
                style="flex: 2; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
         <button type="button" data-action="remove-row" class="btn btn-sm btn-danger">${t('button_delete')}</button>
     `;
@@ -237,7 +155,7 @@ function addLlmParamRow(paramData = null) {
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
             <div>
                 <label style="font-size: 0.85rem; font-weight: 600; color: #333; display: block; margin-bottom: 4px;">パラメータ名 *</label>
-                <input type="text" class="llm-param-name" value="${data.name}" placeholder="parameter_name"
+                <input type="text" class="llm-param-name" value="${AppDom.escapeHtml(data.name)}" placeholder="parameter_name"
                        style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9rem;">
             </div>
             <div>
@@ -254,19 +172,19 @@ function addLlmParamRow(paramData = null) {
         </div>
         <div style="margin-bottom: 10px;">
             <label style="font-size: 0.85rem; font-weight: 600; color: #333; display: block; margin-bottom: 4px;">説明 (LLMに表示)</label>
-            <input type="text" class="llm-param-description" value="${data.description}" placeholder="このパラメータの説明"
+            <input type="text" class="llm-param-description" value="${AppDom.escapeHtml(data.description)}" placeholder="このパラメータの説明"
                    style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9rem;">
         </div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
             <div>
                 <label style="font-size: 0.85rem; font-weight: 600; color: #333; display: block; margin-bottom: 4px;">デフォルト値</label>
-                <input type="text" class="llm-param-default" value="${data.default}" placeholder="${data.type === 'enum' ? 'Enum値の1つを選択' : 'デフォルト値'}"
+                <input type="text" class="llm-param-default" value="${AppDom.escapeHtml(data.default)}" placeholder="${data.type === 'enum' ? 'Enum値の1つを選択' : 'デフォルト値'}"
                        style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9rem;">
                 <small class="default-hint" style="display: ${data.type === 'enum' ? 'block' : 'none'}; color: #856404; font-size: 0.75rem; margin-top: 2px;">⚠️ Enum値の中から選んでください</small>
             </div>
             <div class="enum-field-container" style="display: ${data.type === 'enum' ? 'block' : 'none'};">
                 <label style="font-size: 0.85rem; font-weight: 600; color: #333; display: block; margin-bottom: 4px;">Enum値 (カンマ区切り) *</label>
-                <input type="text" class="llm-param-enum" value="${data.enum}" placeholder="option1,option2,option3"
+                <input type="text" class="llm-param-enum" value="${AppDom.escapeHtml(data.enum)}" placeholder="option1,option2,option3"
                        style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9rem;">
             </div>
         </div>
@@ -280,25 +198,6 @@ function addLlmParamRow(paramData = null) {
         </div>
     `;
     container.appendChild(row);
-}
-
-// Toggle enum field visibility based on type selection
-function toggleEnumField(selectElement) {
-    const row = selectElement.closest('.llm-param-row');
-    const enumContainer = row.querySelector('.enum-field-container');
-    const defaultInput = row.querySelector('.llm-param-default');
-    const defaultHint = row.querySelector('.default-hint');
-    const selectedType = selectElement.value;
-    
-    if (selectedType === 'enum') {
-        enumContainer.style.display = 'block';
-        defaultInput.placeholder = 'Enum値の1つを選択';
-        if (defaultHint) defaultHint.style.display = 'block';
-    } else {
-        enumContainer.style.display = 'none';
-        defaultInput.placeholder = 'デフォルト値';
-        if (defaultHint) defaultHint.style.display = 'none';
-    }
 }
 
 // ========== POST用の階層エディタ機能 ==========
@@ -467,11 +366,11 @@ function addLlmParamTreeRow(containerOrParent = null, depth = 0, paramData = nul
                             data.itemsType === 'string' ? 'value1, value2, value3' :
                             data.itemsType === 'number' || data.itemsType === 'integer' ? '1, 2, 3' :
                             data.itemsType === 'boolean' ? 'true, false, true' : ''
-                        }" value="${data.arrayValue || ''}" style="width: 100%; padding: 5px 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 0.85rem;">
+                        }" value="${AppDom.escapeHtml(data.arrayValue || '')}" style="width: 100%; padding: 5px 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 0.85rem;">
                     </div>
                     <div class="tree-array-object-value-field" style="display: ${isFixedParam && data.type === 'array' && data.itemsType === 'object' ? 'block' : 'none'};">
                         <label style="font-size: 0.75rem; font-weight: 600; color: #333; display: block; margin-bottom: 2px;">値 (オブジェクトをカンマ区切り)</label>
-                        <textarea class="tree-array-object-value" rows="4" placeholder='{"key": "value"}, {"key": "value"}' style="width: 100%; padding: 5px 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 0.85rem; font-family: monospace;">${data.arrayObjectValue || ''}</textarea>
+                        <textarea class="tree-array-object-value" rows="4" placeholder='{"key": "value"}, {"key": "value"}' style="width: 100%; padding: 5px 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 0.85rem; font-family: monospace;">${AppDom.escapeHtml(data.arrayObjectValue || '')}</textarea>
                     </div>
                     <div class="tree-enum-field" style="display: ${data.type === 'enum' ? 'block' : 'none'};">
                         <label style="font-size: 0.75rem; font-weight: 600; color: #333; display: block; margin-bottom: 2px;">Enum値 *</label>
@@ -500,7 +399,7 @@ function addLlmParamTreeRow(containerOrParent = null, depth = 0, paramData = nul
                             `)
                         : `
                             <input type="text" class="tree-param-default" placeholder="${isFixedParam ? '値' : 'デフォルト値'}"
-                                   value="${data.default || ''}"
+                                   value="${AppDom.escapeHtml(data.default || '')}"
                                    style="width: 100%; padding: 5px 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 0.85rem;">
                         `}
                     </div>
@@ -615,7 +514,7 @@ function handleTreeTypeChange(nodeId) {
             const shouldClearValue = (currentValue === 'true' || currentValue === 'false');
             defaultFieldContainer.innerHTML = `
                 <label style="font-size: 0.75rem; font-weight: 600; color: #333; display: block; margin-bottom: 2px;">${label}</label>
-                <input type="text" class="tree-param-default" placeholder="${label}" value="${shouldClearValue ? '' : currentValue}"
+                <input type="text" class="tree-param-default" placeholder="${label}" value="${shouldClearValue ? '' : AppDom.escapeHtml(currentValue)}"
                        style="width: 100%; padding: 5px 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 0.85rem;">
             `;
         }
@@ -773,322 +672,6 @@ function removeTreeNode(nodeId) {
     if (node) node.remove();
 }
 
-// 固定パラメータのobject型子プロパティから値オブジェクトを構築
-function buildConstObjectValueFromChildren(node) {
-    const childrenContainer = node.querySelector('.tree-children');
-    if (!childrenContainer) return null;
-    
-    const childNodes = childrenContainer.querySelectorAll(':scope > .tree-node');
-    if (childNodes.length === 0) return null;
-    
-    const obj = {};
-    childNodes.forEach(childNode => {
-        const nameInput = childNode.querySelector('.tree-param-name');
-        const typeSelect = childNode.querySelector('.tree-param-type');
-        
-        if (!nameInput || !typeSelect) return;
-        
-        const name = nameInput.value.trim();
-        if (!name) return;
-        
-        const type = typeSelect.value;
-        
-        // 型に応じて値を取得
-        if (type === 'array') {
-            // array型: 配列要素の型を確認
-            const arrayItemsTypeSelect = childNode.querySelector('.tree-array-items-type');
-            const itemsType = arrayItemsTypeSelect ? arrayItemsTypeSelect.value : 'string';
-            
-            if (itemsType === 'object') {
-                // object配列: tree-array-object-valueからJSON取得
-                const arrayObjectValueInput = childNode.querySelector('.tree-array-object-value');
-                if (arrayObjectValueInput && arrayObjectValueInput.value.trim()) {
-                    try {
-                        const inputValue = arrayObjectValueInput.value.trim();
-                        obj[name] = JSON.parse(`[${inputValue}]`);
-                    } catch (e) {
-                        console.error('Invalid JSON for array object value:', e);
-                        obj[name] = [];
-                    }
-                } else {
-                    obj[name] = [];
-                }
-            } else {
-                // プリミティブ型配列: tree-array-valueからCSV取得
-                const arrayValueInput = childNode.querySelector('.tree-array-value');
-                if (arrayValueInput && arrayValueInput.value.trim()) {
-                    const csvValue = arrayValueInput.value.trim();
-                    const arrayItems = csvValue.split(',').map(v => v.trim()).filter(v => v);
-                    
-                    // 型に応じて変換
-                    if (itemsType === 'number') {
-                        obj[name] = arrayItems.map(v => parseFloat(v));
-                    } else if (itemsType === 'integer') {
-                        obj[name] = arrayItems.map(v => parseInt(v));
-                    } else if (itemsType === 'boolean') {
-                        obj[name] = arrayItems.map(v => v.toLowerCase() === 'true');
-                    } else {
-                        obj[name] = arrayItems; // string
-                    }
-                } else {
-                    obj[name] = [];
-                }
-            }
-        } else if (type === 'object') {
-            // 2階層目のobject: まず子プロパティから再帰的に構築を試み、なければtextareaからJSON取得
-            const nestedObj = buildConstObjectValueFromChildren(childNode);
-            if (nestedObj) {
-                obj[name] = nestedObj;
-            } else {
-                // tree-object-value-field内のtextareaから取得
-                const objectValueField = childNode.querySelector('.tree-object-value-field');
-                if (objectValueField) {
-                    const textarea = objectValueField.querySelector('.tree-param-default');
-                    const value = textarea ? textarea.value.trim() : '';
-                    if (value) {
-                        try {
-                            obj[name] = JSON.parse(value);
-                        } catch (e) {
-                            console.error('Invalid JSON for nested object:', e);
-                        }
-                    }
-                }
-            }
-        } else {
-            // その他の型: tree-default-value-field内のinputから取得
-            const defaultValueField = childNode.querySelector('.tree-default-value-field');
-            if (!defaultValueField) return;
-            
-            const defaultInput = defaultValueField.querySelector('.tree-param-default');
-            if (!defaultInput) return;
-            
-            const value = defaultInput.value.trim();
-            if (!value) return;
-            
-            // 型に応じて値を変換
-            if (type === 'number') {
-                obj[name] = parseFloat(value);
-            } else if (type === 'integer') {
-                obj[name] = parseInt(value);
-            } else if (type === 'boolean') {
-                obj[name] = value.toLowerCase() === 'true';
-            } else {
-                obj[name] = value;
-            }
-        }
-    });
-    
-    return Object.keys(obj).length > 0 ? obj : null;
-}
-
-// ツリー構造からJSON Schemaを構築
-function buildSchemaFromTree() {
-    const properties = {};
-    const required = [];
-    
-    // 固定パラメータをconst制約付きでpropertiesに含める
-    const fixedContainer = document.getElementById('fixed-params-post-container');
-    const fixedNodes = Array.from(fixedContainer.children).filter(child => child.classList.contains('tree-node'));
-    
-    fixedNodes.forEach(node => {
-        const prop = buildPropertyFromNode(node);
-        if (prop && prop.name) {
-            const typeSelect = node.querySelector('.tree-param-type');
-            const type = typeSelect.value;
-            
-            let constValue;
-            
-            // array型の場合、arrayValueフィールドからCSV値を取得して配列に変換
-            if (type === 'array') {
-                const arrayItemsTypeSelect = node.querySelector('.tree-array-items-type');
-                const itemsType = arrayItemsTypeSelect ? arrayItemsTypeSelect.value : 'string';
-                
-                if (itemsType === 'object') {
-                    // object配列の場合、オブジェクトのカンマ区切りを配列化
-                    const arrayObjectValueInput = node.querySelector('.tree-array-object-value');
-                    if (arrayObjectValueInput && arrayObjectValueInput.value.trim()) {
-                        try {
-                            // 入力値を[]で囲んで配列としてパース
-                            const inputValue = arrayObjectValueInput.value.trim();
-                            constValue = JSON.parse(`[${inputValue}]`);
-                            // 配列であることを確認
-                            if (!Array.isArray(constValue)) {
-                                console.error('Array object value must be an array');
-                                constValue = [];
-                            }
-                        } catch (e) {
-                            console.error('Invalid JSON for array object value:', e);
-                            constValue = [];
-                        }
-                    } else {
-                        constValue = [];
-                    }
-                } else {
-                    // プリミティブ型配列の場合、CSV形式のinputから取得
-                    const arrayValueInput = node.querySelector('.tree-array-value');
-                    if (arrayValueInput && arrayValueInput.value.trim()) {
-                        const csvValue = arrayValueInput.value.trim();
-                        const arrayItems = csvValue.split(',').map(v => v.trim()).filter(v => v);
-                        
-                        // 型に応じて配列要素を変換
-                        if (itemsType === 'number') {
-                            constValue = arrayItems.map(v => parseFloat(v));
-                        } else if (itemsType === 'integer') {
-                            constValue = arrayItems.map(v => parseInt(v));
-                        } else if (itemsType === 'boolean') {
-                            constValue = arrayItems.map(v => v.toLowerCase() === 'true');
-                        } else {
-                            constValue = arrayItems; // string
-                        }
-                    } else {
-                        constValue = []; // 空配列
-                    }
-                }
-            } else if (type === 'object') {
-                // object型の場合、子プロパティから値を構築
-                constValue = buildConstObjectValueFromChildren(node);
-                
-                // 子プロパティがない場合は、値フィールドからJSONをパース
-                if (!constValue) {
-                    const defaultValue = node.querySelector('.tree-param-default').value.trim();
-                    if (defaultValue) {
-                        try {
-                            constValue = JSON.parse(defaultValue);
-                        } catch (e) {
-                            constValue = defaultValue;
-                        }
-                    }
-                }
-            } else {
-                // 通常の値フィールドから取得
-                const defaultValue = node.querySelector('.tree-param-default').value.trim();
-                if (defaultValue) {
-                    // 型に応じて値を変換
-                    if (prop.schema.type === 'number' || prop.schema.type === 'integer') {
-                        constValue = prop.schema.type === 'integer' ? parseInt(defaultValue) : parseFloat(defaultValue);
-                    } else if (prop.schema.type === 'boolean') {
-                        constValue = defaultValue.toLowerCase() === 'true';
-                    } else {
-                        constValue = defaultValue;
-                    }
-                }
-            }
-            
-            if (constValue !== undefined && constValue !== null && constValue !== '') {
-                properties[prop.name] = {
-                    ...prop.schema,
-                    const: constValue,
-                    default: constValue,
-                    description: prop.schema.description || '固定値パラメータ（変更不可）'
-                };
-                // 固定パラメータは常にrequiredに含める
-                required.push(prop.name);
-            }
-        }
-    });
-    
-    // LLMパラメータを追加
-    const rootNodes = document.querySelectorAll('#llm-params-tree-container > .tree-node');
-    rootNodes.forEach(node => {
-        const prop = buildPropertyFromNode(node);
-        if (prop && prop.name) {
-            properties[prop.name] = prop.schema;
-            if (prop.required) required.push(prop.name);
-        }
-    });
-    
-    if (Object.keys(properties).length > 0) {
-        return {
-            type: 'object',
-            properties: properties,
-            required: required
-        };
-    }
-    
-    return {};
-}
-
-function buildPropertyFromNode(node) {
-    const nameInput = node.querySelector('.tree-param-name');
-    const typeSelect = node.querySelector('.tree-param-type');
-    const descriptionInput = node.querySelector('.tree-param-description');
-    const defaultInput = node.querySelector('.tree-param-default');
-    const enumInput = node.querySelector('.tree-param-enum');
-    const arrayItemsTypeSelect = node.querySelector('.tree-array-items-type');
-    const requiredCheckbox = node.querySelector('.tree-param-required');
-    
-    const name = nameInput.value.trim();
-    if (!name) return null;
-    
-    const type = typeSelect.value;
-    const description = descriptionInput.value.trim();
-    const defaultValue = defaultInput.value.trim();
-    const enumValue = enumInput ? enumInput.value.trim() : '';
-    const isRequired = requiredCheckbox.checked;
-    
-    let schema = { type: type === 'enum' ? 'string' : type };
-    if (description) schema.description = description;
-    
-    if (type === 'enum' && enumValue) {
-        schema.enum = enumValue.split(',').map(v => v.trim()).filter(v => v);
-    }
-    
-    if (type === 'array' && arrayItemsTypeSelect) {
-        const itemsType = arrayItemsTypeSelect.value;
-        schema.items = { type: itemsType };
-        
-        // If array items type is object, collect properties from array-item-properties container
-        if (itemsType === 'object') {
-            const arrayItemPropertiesContainer = node.querySelector('.tree-array-item-properties');
-            const itemPropertyNodes = arrayItemPropertiesContainer.querySelectorAll(':scope > .tree-node');
-            const itemProperties = {};
-            const itemRequired = [];
-            
-            itemPropertyNodes.forEach(itemPropNode => {
-                const itemProp = buildPropertyFromNode(itemPropNode);
-                if (itemProp && itemProp.name) {
-                    itemProperties[itemProp.name] = itemProp.schema;
-                    if (itemProp.required) itemRequired.push(itemProp.name);
-                }
-            });
-            
-            if (Object.keys(itemProperties).length > 0) {
-                schema.items.properties = itemProperties;
-                if (itemRequired.length > 0) {
-                    schema.items.required = itemRequired;
-                }
-            }
-        }
-    }
-    
-    if (type === 'object') {
-        const childNodes = node.querySelector('.tree-children').querySelectorAll(':scope > .tree-node');
-        const childProperties = {};
-        const childRequired = [];
-        
-        childNodes.forEach(childNode => {
-            const childProp = buildPropertyFromNode(childNode);
-            if (childProp && childProp.name) {
-                childProperties[childProp.name] = childProp.schema;
-                if (childProp.required) childRequired.push(childProp.name);
-            }
-        });
-        
-        schema.properties = childProperties;
-        if (childRequired.length > 0) schema.required = childRequired;
-    }
-    
-    if (defaultValue) {
-        try {
-            schema.default = JSON.parse(defaultValue);
-        } catch {
-            schema.default = defaultValue;
-        }
-    }
-    
-    return { name, schema, required: isRequired };
-}
-
 // Initialize and setup
 function validateJson() {
     const textarea = document.getElementById('body_json');
@@ -1133,209 +716,6 @@ function formatJson() {
         errorDiv.style.color = '#dc3545';
         errorDiv.innerHTML = '✗ ' + t('json_invalid') + ': ' + e.message;
     }
-}
-
-// Generate request sample based on current parameter definitions
-function generateRequestSample() {
-    const method = document.getElementById('method').value;
-    const url = document.getElementById('url').value || '/api/endpoint';
-    
-    if (method === 'GET') {
-        generateGetRequestSample(url);
-    } else {
-        generatePostRequestSample();
-    }
-}
-
-function generateGetRequestSample(baseUrl) {
-    const outputElement = document.getElementById('request-sample-output-get');
-    
-    // Collect fixed parameters
-    const fixedParams = [];
-    const fixedRows = document.querySelectorAll('#fixed-params-container .key-value-row');
-    fixedRows.forEach(row => {
-        const inputs = row.querySelectorAll('input[type="text"]');
-        const key = inputs[0].value.trim();
-        const value = inputs[1].value.trim();
-        if (key) {
-            // Query parameters don't need quotes - they're all strings by nature
-            fixedParams.push(`${key}=${value}`);
-        }
-    });
-    
-    // Collect LLM parameters
-    const llmParams = [];
-    const llmRows = document.querySelectorAll('#llm-params-container .llm-param-row');
-    llmRows.forEach(row => {
-        const name = row.querySelector('.llm-param-name').value.trim();
-        const type = row.querySelector('.llm-param-type').value;
-        if (name) {
-            let sampleValue;
-            if (type === 'enum') {
-                const enumValues = row.querySelector('.llm-param-enum').value.trim();
-                sampleValue = enumValues ? enumValues.split(',')[0].trim() : '<string>';
-            } else if (type === 'string') {
-                sampleValue = '<string>';
-            } else if (type === 'number' || type === 'integer') {
-                sampleValue = '<number>';
-            } else if (type === 'boolean') {
-                sampleValue = '<boolean>';
-            }
-            llmParams.push(`${name}=${sampleValue}`);
-        }
-    });
-    
-    const allParams = [...fixedParams, ...llmParams];
-    const queryString = allParams.length > 0 ? '?' + allParams.join('&') : '';
-    const fullUrl = `${baseUrl}${queryString}`;
-    
-    outputElement.textContent = fullUrl || '(パラメータを追加してください)';
-}
-
-function generatePostRequestSample() {
-    const outputElement = document.getElementById('request-sample-output-post');
-    
-    // Visual editor mode - build sample from tree
-    const sampleBody = {};
-    
-    // Add fixed parameters from tree structure
-    const fixedNodes = document.querySelectorAll('#fixed-params-post-container > .tree-node');
-    fixedNodes.forEach(node => {
-        const name = node.querySelector('.tree-param-name').value.trim();
-        const type = node.querySelector('.tree-param-type').value;
-        
-        if (!name) return;
-        
-        // array型の場合、arrayValueフィールドから値を取得
-        if (type === 'array') {
-            const arrayItemsTypeSelect = node.querySelector('.tree-array-items-type');
-            const itemsType = arrayItemsTypeSelect ? arrayItemsTypeSelect.value : 'string';
-            
-            if (itemsType === 'object') {
-                // object配列の場合、オブジェクトのカンマ区切りを配列化
-                const arrayObjectValueInput = node.querySelector('.tree-array-object-value');
-                if (arrayObjectValueInput && arrayObjectValueInput.value.trim()) {
-                    try {
-                        const inputValue = arrayObjectValueInput.value.trim();
-                        sampleBody[name] = JSON.parse(`[${inputValue}]`);
-                    } catch (e) {
-                        console.error('Invalid JSON for array object value:', e);
-                        sampleBody[name] = [];
-                    }
-                }
-            } else {
-                // プリミティブ型配列の場合、CSV形式のinputから取得
-                const arrayValueInput = node.querySelector('.tree-array-value');
-                if (arrayValueInput && arrayValueInput.value.trim()) {
-                    const csvValue = arrayValueInput.value.trim();
-                    const arrayItems = csvValue.split(',').map(v => v.trim()).filter(v => v);
-                    
-                    // 型に応じて変換
-                    if (itemsType === 'number') {
-                        sampleBody[name] = arrayItems.map(v => parseFloat(v));
-                    } else if (itemsType === 'integer') {
-                        sampleBody[name] = arrayItems.map(v => parseInt(v));
-                    } else if (itemsType === 'boolean') {
-                        sampleBody[name] = arrayItems.map(v => v.toLowerCase() === 'true');
-                    } else {
-                        sampleBody[name] = arrayItems; // string
-                    }
-                }
-            }
-        } else if (type === 'object') {
-            // object型の場合、子プロパティから値を構築
-            const objValue = buildConstObjectValueFromChildren(node);
-            
-            // 子プロパティがない場合は、値フィールドからJSONをパース
-            if (objValue) {
-                sampleBody[name] = objValue;
-            } else {
-                const defaultValue = node.querySelector('.tree-param-default').value.trim();
-                if (defaultValue) {
-                    try {
-                        sampleBody[name] = JSON.parse(defaultValue);
-                    } catch (e) {
-                        sampleBody[name] = defaultValue;
-                    }
-                }
-            }
-        } else {
-            // 通常の型
-            const defaultValue = node.querySelector('.tree-param-default').value.trim();
-            if (defaultValue) {
-                // Convert value based on type
-                let value = defaultValue;
-                if (type === 'number') {
-                    value = parseFloat(defaultValue);
-                } else if (type === 'integer') {
-                    value = parseInt(defaultValue);
-                } else if (type === 'boolean') {
-                    value = defaultValue.toLowerCase() === 'true';
-                }
-                sampleBody[name] = value;
-            }
-        }
-    });
-    
-    // Add LLM parameters from tree
-    const rootNodes = document.querySelectorAll('#llm-params-tree-container > .tree-node');
-    rootNodes.forEach(node => {
-        const name = node.querySelector('.tree-param-name').value.trim();
-        if (name) {
-            sampleBody[name] = generateSampleValue(node);
-        }
-    });
-    
-    outputElement.textContent = JSON.stringify(sampleBody, null, 2);
-}
-
-function generateSampleValue(node) {
-    const type = node.querySelector('.tree-param-type').value;
-    
-    if (type === 'string') {
-        return '<string>';
-    } else if (type === 'number' || type === 'integer') {
-        return '<number>';
-    } else if (type === 'boolean') {
-        return '<boolean>';
-    } else if (type === 'enum') {
-        const enumValues = node.querySelector('.tree-param-enum').value.trim();
-        return enumValues ? `"${enumValues.split(',')[0].trim()}"` : '<string>';
-    } else if (type === 'array') {
-        const itemsType = node.querySelector('.tree-array-items-type').value;
-        if (itemsType === 'object') {
-            // Build sample object from array item properties
-            const arrayItemPropertiesContainer = node.querySelector('.tree-array-item-properties');
-            const itemPropertyNodes = arrayItemPropertiesContainer.querySelectorAll(':scope > .tree-node');
-            const sampleItem = {};
-            itemPropertyNodes.forEach(itemNode => {
-                const itemName = itemNode.querySelector('.tree-param-name').value.trim();
-                if (itemName) {
-                    sampleItem[itemName] = generateSampleValue(itemNode);
-                }
-            });
-            return [sampleItem];
-        } else {
-            // Simple type array
-            const sampleValue = itemsType === 'string' ? '<string>' : 
-                               itemsType === 'number' || itemsType === 'integer' ? '<number>' : 
-                               itemsType === 'boolean' ? '<boolean>' : '<value>';
-            return [sampleValue];
-        }
-    } else if (type === 'object') {
-        const childrenContainer = node.querySelector('.tree-children');
-        const childNodes = childrenContainer.querySelectorAll(':scope > .tree-node');
-        const sampleObj = {};
-        childNodes.forEach(childNode => {
-            const childName = childNode.querySelector('.tree-param-name').value.trim();
-            if (childName) {
-                sampleObj[childName] = generateSampleValue(childNode);
-            }
-        });
-        return sampleObj;
-    }
-    
-    return '<value>';
 }
 
 // Initialize and setup
@@ -1598,46 +978,6 @@ function generateSampleValue(node) {
 
 // ========== Prompt Preview機能 ==========
 
-// テンプレートから変数を抽出
-function extractTemplateVariables(template) {
-    const regex = /\{\{([a-zA-Z_][a-zA-Z0-9_]*)\}\}/g;
-    const variables = [];
-    let match;
-    while ((match = regex.exec(template)) !== null) {
-        if (!variables.includes(match[1])) {
-            variables.push(match[1]);
-        }
-    }
-    return variables;
-}
-
-// LLMパラメータから変数情報を取得
-function getLlmParamsInfo() {
-    const params = {};
-    const treeNodes = document.querySelectorAll('#llm-params-tree-container > .tree-node');
-    
-    treeNodes.forEach(node => {
-        const nameInput = node.querySelector('.tree-param-name');
-        const typeSelect = node.querySelector('.tree-param-type');
-        const descInput = node.querySelector('.tree-param-description');
-        const requiredCheck = node.querySelector('.tree-param-required');
-        const enumInput = node.querySelector('.tree-param-enum');
-        
-        if (nameInput && nameInput.value.trim()) {
-            const name = nameInput.value.trim();
-            const type = typeSelect ? typeSelect.value : 'string';
-            params[name] = {
-                type: type,
-                description: descInput ? descInput.value.trim() : '',
-                required: requiredCheck ? requiredCheck.checked : false,
-                enum: enumInput ? enumInput.value.trim().split(',').filter(v => v.trim()) : []
-            };
-        }
-    });
-    
-    return params;
-}
-
 // プロンプトプレビューを生成
 function generatePromptPreview() {
     const templateContent = document.getElementById('template_content')?.value || '';
@@ -1688,13 +1028,13 @@ function generatePromptPreview() {
             const statusText = isDefinedInParams 
                 ? t('prompt_var_defined')
                 : t('prompt_var_not_defined');
-            const description = paramInfo?.description ? ` - ${paramInfo.description}` : '';
+            const description = paramInfo?.description ? ` - ${AppDom.escapeHtml(paramInfo.description)}` : '';
             
             return `
                 <div style="display: flex; align-items: center; gap: 8px; padding: 6px 10px; margin-bottom: 4px; background: ${isDefinedInParams ? '#c3e6cb' : '#ffeeba'}; border-radius: 4px;">
                     <span>${statusIcon}</span>
-                    <code style="font-weight: bold; background: white; padding: 2px 6px; border-radius: 3px;">{{${varName}}}</code>
-                    <span style="color: #666; font-size: 0.85rem;">(${typeLabel})</span>
+                    <code style="font-weight: bold; background: white; padding: 2px 6px; border-radius: 3px;">{{${AppDom.escapeHtml(varName)}}}</code>
+                    <span style="color: #666; font-size: 0.85rem;">(${AppDom.escapeHtml(typeLabel)})</span>
                     <span style="font-size: 0.8rem; color: #666;">${statusText}${description}</span>
                 </div>
             `;
@@ -1758,7 +1098,7 @@ async function loadExistingResources() {
             // Keep placeholder option
             selectElement.innerHTML = `<option value="" data-i18n="capability_select_resource_placeholder">-- Resourceを選択してください --</option>` +
                 globalResources.filter(r => r.is_enabled).map(resource => 
-                    `<option value="${resource.id}">${resource.name} (${resource.mime_type})</option>`
+                    `<option value="${Number(resource.id)}">${AppDom.escapeHtml(resource.name)} (${AppDom.escapeHtml(resource.mime_type)})</option>`
                 ).join('');
         }
     } catch (e) {

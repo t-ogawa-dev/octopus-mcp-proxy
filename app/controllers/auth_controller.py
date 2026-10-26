@@ -4,17 +4,49 @@ Handles admin login, logout, and authentication with brute-force protection
 """
 
 import logging
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 from flask import Blueprint, current_app, jsonify, redirect, render_template, request, session, url_for
 
+from app.services.background import BoundedExecutor
+
 auth_bp = Blueprint("auth", __name__)
 logger = logging.getLogger(__name__)
 
 # Thread pool for async log writing
-_executor = ThreadPoolExecutor(max_workers=2)
+_executor = BoundedExecutor(max_workers=2, max_pending=1000, name="login-log")
+
+# APIs the change-credentials page needs before the forced credential change completes
+_CREDENTIAL_CHANGE_APIS = frozenset({"/api/admin/credentials", "/api/settings/language"})
+
+
+_UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+def reject_cross_origin_request():
+    """CSRF protection for cookie-authenticated routes (before_request hook).
+
+    Browsers attach Origin (or at least Referer) to cross-origin state-changing
+    requests, so a mismatch with our own host means the request came from another
+    site. Requests carrying neither header are not from a browser and are allowed.
+    """
+    from urllib.parse import urlsplit
+
+    if request.method not in _UNSAFE_METHODS:
+        return None
+
+    source = request.headers.get("Origin") or request.headers.get("Referer")
+    if source is None:
+        return None
+    # Ports are ignored: a reverse proxy may drop them from Host, and cookies are not port-scoped anyway.
+    # "null" (opaque origin) has no hostname and is rejected as well.
+    if urlsplit(source).hostname != urlsplit(f"//{request.host}").hostname:
+        logger.warning("Rejected cross-origin %s %s", request.method, request.path)
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "Cross-origin request rejected"}), 403
+        return "Cross-origin request rejected", 403
+    return None
 
 
 def login_required(f):
@@ -34,15 +66,16 @@ def login_required(f):
             return redirect(url_for("auth.login"))
 
         # Check whether the admin has completed the forced credential change.
-        # Allow /admin/change-credentials itself so there is no redirect loop.
-        # Also allow all /api/ paths so that AJAX calls from the change-credentials
-        # page work correctly instead of receiving an HTML redirect response.
+        # Allow /admin/change-credentials itself so there is no redirect loop, and
+        # only the APIs that page calls; other APIs get a JSON 403 instead of a redirect.
         from flask import request as _req
 
         change_url = url_for("admin.change_credentials")
-        if not _req.path.startswith(change_url) and not _req.path.startswith("/api/"):
+        if not _req.path.startswith(change_url) and _req.path not in _CREDENTIAL_CHANGE_APIS:
             cred = _get_current_admin_credentials()
             if cred is not None and not cred.is_initialized:
+                if _req.path.startswith("/api/"):
+                    return jsonify({"error": "Credential change required"}), 403
                 return redirect(change_url)
 
         return f(*args, **kwargs)
@@ -54,6 +87,7 @@ def _get_admin_credentials_by_username(username):
     """Return the AdminCredentials row matching username, or None if not found."""
     try:
         from app.models.models import AdminCredentials
+
         return AdminCredentials.query.filter_by(username=username).first()
     except Exception:
         return None
@@ -76,10 +110,11 @@ def index():
 
 
 def _get_client_ip():
-    """Get client IP address from request"""
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
+    """Get client IP address from request.
+
+    X-Forwarded-For is resolved by ProxyFix only for the configured number of trusted
+    proxies (TRUSTED_PROXY_COUNT), so a client cannot spoof its address with the header.
+    """
     return request.remote_addr or "0.0.0.0"
 
 
@@ -172,14 +207,14 @@ def _log_login_attempt(username, ip_address, user_agent, is_success, failure_rea
     """Log login attempt asynchronously (or synchronously in test mode)"""
     import os
 
+    # Captured here because the worker thread has no application context of its own
+    app = current_app._get_current_object()
+
     def _write_log():
         try:
-            from flask import current_app
-
             from app.models.models import AdminLoginLog, db
 
-            # In test mode, use current app context (synchronous)
-            if os.environ.get("TESTING") or current_app.config.get("TESTING"):
+            with app.app_context():
                 log_entry = AdminLoginLog(
                     created_at=datetime.now(timezone.utc).replace(tzinfo=None),
                     username=username,
@@ -194,31 +229,11 @@ def _log_login_attempt(username, ip_address, user_agent, is_success, failure_rea
                 logger.debug(
                     f"Login attempt logged: {username} from {ip_address} - {'Success' if is_success else 'Failure'}"
                 )
-            else:
-                # Production mode: create new app context (asynchronous)
-                from app import create_app
-
-                app = create_app()
-                with app.app_context():
-                    log_entry = AdminLoginLog(
-                        created_at=datetime.now(timezone.utc).replace(tzinfo=None),
-                        username=username,
-                        ip_address=ip_address,
-                        user_agent=user_agent,
-                        is_success=is_success,
-                        failure_reason=failure_reason,
-                        session_id=session_id,
-                    )
-                    db.session.add(log_entry)
-                    db.session.commit()
-                    logger.debug(
-                        f"Login attempt logged: {username} from {ip_address} - {'Success' if is_success else 'Failure'}"
-                    )
         except Exception as e:
             logger.error(f"Failed to log login attempt: {e}")
 
     # In test mode, execute synchronously
-    if os.environ.get("TESTING"):
+    if os.environ.get("TESTING") or app.config.get("TESTING"):
         _write_log()
     else:
         _executor.submit(_write_log)
@@ -253,10 +268,9 @@ def login():
         if cred is not None:
             authenticated = cred.check_password(password)
         elif AdminCredentials.query.count() == 0:
-            authenticated = (
-                username == current_app.config.get("ADMIN_USERNAME", "")
-                and password == current_app.config.get("ADMIN_PASSWORD", "")
-            )
+            authenticated = username == current_app.config.get(
+                "ADMIN_USERNAME", ""
+            ) and password == current_app.config.get("ADMIN_PASSWORD", "")
 
         if authenticated:
             # Success - clear lock status

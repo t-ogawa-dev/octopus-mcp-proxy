@@ -89,12 +89,17 @@ def upgrade():
         (fk['name'] for fk in existing_fks if 'service_template_id' in fk.get('constrained_columns', [])),
         None
     )
-    if fk_to_drop:
-        op.drop_constraint(fk_to_drop, 'mcp_capability_templates', type_='foreignkey')
-
     cap_cols = [c['name'] for c in inspector.get_columns('mcp_capability_templates')]
-    if 'template_id' in cap_cols:
-        op.create_foreign_key(None, 'mcp_capability_templates', 'mcp_service_templates', ['template_id'], ['id'])
+    # Batch mode so SQLite (no ALTER of constraints) rebuilds the table; PostgreSQL gets plain ALTERs
+    with op.batch_alter_table('mcp_capability_templates', schema=None) as batch_op:
+        if fk_to_drop:
+            batch_op.drop_constraint(fk_to_drop, type_='foreignkey')
+        # SQLite keeps an unnamed FK on template_id from earlier migrations; do not add a duplicate
+        has_template_fk = any(fk.get('constrained_columns') == ['template_id'] for fk in existing_fks)
+        if 'template_id' in cap_cols and not has_template_fk:
+            batch_op.create_foreign_key(
+                'mcp_capability_templates_template_id_fkey', 'mcp_service_templates', ['template_id'], ['id']
+            )
 
     with op.batch_alter_table('mcp_connection_logs', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_mcp_connection_logs_created_at_desc'))

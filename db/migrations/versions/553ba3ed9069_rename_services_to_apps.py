@@ -17,13 +17,19 @@ depends_on = None
 
 
 def upgrade():
+    conn = op.get_bind()
+    is_sqlite = conn.dialect.name == 'sqlite'
+    if is_sqlite:
+        # Python's sqlite3 enables legacy_alter_table, which leaves capabilities'
+        # FK pointing at the old "services" name and breaks the batch rebuild below.
+        op.execute('PRAGMA legacy_alter_table=OFF')
+
     # Rename services table to apps
     op.rename_table('services', 'apps')
 
     # Look up the actual (database-generated) FK constraint name instead of
     # assuming MySQL-style naming ("capabilities_ibfk_1"); Postgres auto-names
     # it something like "capabilities_service_id_fkey".
-    conn = op.get_bind()
     inspector = sa.inspect(conn)
     fk_to_drop = next(
         (fk['name'] for fk in inspector.get_foreign_keys('capabilities')
@@ -39,7 +45,9 @@ def upgrade():
                             new_column_name='app_id',
                             existing_type=sa.Integer(),
                             nullable=False)
-        batch_op.create_foreign_key('capabilities_ibfk_1', 'apps', ['app_id'], ['id'])
+        # SQLite's unnamed FK cannot be dropped; the batch rebuild carries it over to app_id
+        if fk_to_drop or not is_sqlite:
+            batch_op.create_foreign_key('capabilities_ibfk_1', 'apps', ['app_id'], ['id'])
 
 
 def downgrade():

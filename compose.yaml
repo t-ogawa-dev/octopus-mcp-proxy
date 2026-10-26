@@ -24,6 +24,8 @@ services:
     environment:
       - DOCKER_ENV=1
       - FLASK_ENV=${FLASK_ENV:-development}
+      # Requests arrive through Caddy, which overwrites X-Forwarded-For with the real client IP
+      - TRUSTED_PROXY_COUNT=${TRUSTED_PROXY_COUNT:-1}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
     env_file:
@@ -67,6 +69,8 @@ services:
     environment:
       - DOCKER_ENV=1
       - FLASK_ENV=${FLASK_ENV:-development}
+      # Requests arrive through Caddy, which overwrites X-Forwarded-For with the real client IP
+      - TRUSTED_PROXY_COUNT=${TRUSTED_PROXY_COUNT:-1}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - SERVICE_ROLE=mcp
@@ -141,7 +145,9 @@ services:
       - POSTGRES_USER=mcpuser
       - POSTGRES_PASSWORD=mcppassword
     ports:
-      - "5432:5432"
+      # Bound to localhost only: the database must not be reachable from other hosts.
+      # Change DB_HOST_PORT when another project already uses 5432.
+      - "127.0.0.1:${DB_HOST_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

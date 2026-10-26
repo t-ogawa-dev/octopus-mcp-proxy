@@ -10,16 +10,17 @@ import os
 import re
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
 
 from flask import Flask
 
+from app.services.background import BoundedExecutor
+
 logger = logging.getLogger(__name__)
 
-# Thread pool for async log writing (3 workers)
-_executor = ThreadPoolExecutor(max_workers=3)
+# Thread pool for async log writing; excess entries are dropped rather than queued without limit
+_executor = BoundedExecutor(max_workers=3, max_pending=5000, name="mcp-log")
 
 # Stdout logging configuration
 STDOUT_LOGGING_ENABLED = os.getenv("MCP_LOG_STDOUT", "true").lower() == "true"
@@ -33,6 +34,17 @@ MASK_PATTERNS = {
 }
 
 MASK_REPLACEMENT = "[MASKED]"
+# Keys containing any of these (after removing non-alphanumerics) are masked
+SENSITIVE_LOG_FIELDS = ("authorization", "password", "passwd", "secret", "credential", "apikey", "privatekey")
+# Keys ending with these are masked; "token" alone would also hit max_tokens, tokenizer, ...
+SENSITIVE_LOG_SUFFIXES = ("token",)
+
+
+def _is_sensitive_key(key: Any) -> bool:
+    normalized_key = re.sub(r"[^a-z0-9]", "", str(key).lower())
+    return any(field in normalized_key for field in SENSITIVE_LOG_FIELDS) or normalized_key.endswith(
+        SENSITIVE_LOG_SUFFIXES
+    )
 
 
 class LogContext:
@@ -118,6 +130,44 @@ def mask_sensitive_data(text: str, settings: dict[str, Any]) -> str:
 
     masked = text
 
+    def mask_json_value(value: Any) -> tuple[Any, bool]:
+        if isinstance(value, dict):
+            masked_dict: dict[Any, Any] = {}
+            changed = False
+            for key, item in value.items():
+                if _is_sensitive_key(key):
+                    masked_dict[key] = MASK_REPLACEMENT
+                    changed = True
+                else:
+                    masked_dict[key], item_changed = mask_json_value(item)
+                    changed = changed or item_changed
+            return masked_dict, changed
+        if isinstance(value, list):
+            masked_list: list[Any] = []
+            changed = False
+            for item in value:
+                masked_item, item_changed = mask_json_value(item)
+                masked_list.append(masked_item)
+                changed = changed or item_changed
+            return masked_list, changed
+        if isinstance(value, str):
+            bearer_masked = re.sub(r"(?i)\bBearer\s+[^\s,;\"']+", f"Bearer {MASK_REPLACEMENT}", value)
+            return bearer_masked, bearer_masked != value
+        return value, False
+
+    try:
+        parsed = json.loads(masked)
+    except (json.JSONDecodeError, TypeError):
+        parsed = None
+        json_changed = False
+    else:
+        parsed, json_changed = mask_json_value(parsed)
+        if json_changed:
+            masked = json.dumps(parsed, ensure_ascii=False)
+
+    if not json_changed:
+        masked = re.sub(r"(?i)\bBearer\s+[^\s,;\"']+", f"Bearer {MASK_REPLACEMENT}", masked)
+
     # Apply preset masks
     if settings.get("mcp_log_mask_credit_card", True):
         masked = re.sub(MASK_PATTERNS["credit_card"], MASK_REPLACEMENT, masked)
@@ -170,7 +220,7 @@ def _write_log_entry(app: Flask, log_data: dict[str, Any]):
                 app_name=log_data.get("app_name"),
                 capability_id=log_data.get("capability_id"),
                 capability_name=log_data.get("capability_name"),
-                mcp_method=log_data.get("mcp_method", "unknown"),
+                mcp_method=log_data.get("mcp_method") or "unknown",
                 tool_name=log_data.get("tool_name"),
                 request_id=log_data.get("request_id"),
                 request_body=log_data.get("request_body"),
@@ -333,8 +383,12 @@ def log_mcp_request(
         if STDOUT_LOGGING_ENABLED:
             _log_to_stdout(log_data)
 
-        # Submit to thread pool for async DB writing
-        _executor.submit(_write_log_entry, app, log_data)
+        # Async DB write in production; synchronous under test like the other log writers, because
+        # a background thread sharing the in-memory SQLite connection can crash the interpreter
+        if app.config.get("TESTING"):
+            _write_log_entry(app, log_data)
+        else:
+            _executor.submit(_write_log_entry, app, log_data)
 
     except Exception as e:
         logger.error(f"Failed to queue MCP connection log: {e}")
@@ -346,9 +400,8 @@ def create_log_context_from_request(request) -> LogContext:
     context.start()
 
     # Extract client info
-    context.ip_address = request.headers.get("X-Forwarded-For", request.remote_addr)
-    if context.ip_address and "," in context.ip_address:
-        context.ip_address = context.ip_address.split(",")[0].strip()
+    # Trusted X-Forwarded-For hops are already applied to remote_addr by ProxyFix
+    context.ip_address = request.remote_addr
 
     context.user_agent = request.headers.get("User-Agent", "")[:500]  # Limit length
 

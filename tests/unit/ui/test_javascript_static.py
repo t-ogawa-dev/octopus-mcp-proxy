@@ -64,7 +64,9 @@ class TestJavaScriptSyntax:
         try:
             result = subprocess.run(
                 [node_cmd or "node", "--check", str(js_file)],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             if result.returncode != 0:
                 return result.stderr.strip()
@@ -277,9 +279,7 @@ class TestSharedJavaScriptUtilities:
         assert "/assets/js/dom.js" in base_template
 
     def test_connection_logs_index_uses_shared_escape_helper(self, project_root):
-        source = (project_root / "app" / "assets" / "view" / "connection_logs" / "index.js").read_text(
-            encoding="utf-8"
-        )
+        source = (project_root / "app" / "assets" / "view" / "connection_logs" / "index.js").read_text(encoding="utf-8")
 
         assert "AppDom.escapeHtml" in source
         assert "escapeHtml(" not in source.replace("AppDom.escapeHtml(", "")
@@ -289,9 +289,7 @@ class TestSharedJavaScriptUtilities:
         template_detail = (project_root / "app" / "assets" / "view" / "templates" / "detail.js").read_text(
             encoding="utf-8"
         )
-        service_new = (project_root / "app" / "assets" / "view" / "services" / "new.js").read_text(
-            encoding="utf-8"
-        )
+        service_new = (project_root / "app" / "assets" / "view" / "services" / "new.js").read_text(encoding="utf-8")
 
         assert "safeHttpUrl" in dom_source
         assert "safeHttpUrl" in template_detail

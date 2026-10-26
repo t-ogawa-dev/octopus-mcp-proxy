@@ -6,7 +6,6 @@ import json
 
 import pytest
 
-
 VALID_API_KEY = "test-admin-api-key"
 BEARER = f"Bearer {VALID_API_KEY}"
 
@@ -176,6 +175,11 @@ class TestAdminMcpToolsCall:
         content = json.loads(data["result"]["content"][0]["text"])
         assert "mcp_service_count" in content
 
+    def test_missing_required_argument_returns_invalid_params(self, client, db):
+        resp = self._call_tool(client, "delete_variable", {})
+
+        assert json.loads(resp.data)["error"]["code"] == -32602
+
     def test_list_mcp_services_empty(self, client, db):
         resp = self._call_tool(client, "list_mcp_services")
         assert resp.status_code == 200
@@ -199,12 +203,8 @@ class TestAdminMcpToolsCall:
         assert len(content2["mcp_services"]) == 1
 
     def test_create_mcp_service_duplicate_identifier(self, client, db):
-        self._call_tool(
-            client, "create_mcp_service", {"name": "S1", "identifier": "dup-id"}
-        )
-        resp = self._call_tool(
-            client, "create_mcp_service", {"name": "S2", "identifier": "dup-id"}
-        )
+        self._call_tool(client, "create_mcp_service", {"name": "S1", "identifier": "dup-id"})
+        resp = self._call_tool(client, "create_mcp_service", {"name": "S2", "identifier": "dup-id"})
         data = json.loads(resp.data)
         # 重複時は JSON-RPC エラー（data["error"]）が返る
         assert "error" in data
@@ -212,9 +212,7 @@ class TestAdminMcpToolsCall:
 
     def test_delete_mcp_service(self, client, db):
         # create first
-        resp = self._call_tool(
-            client, "create_mcp_service", {"name": "To Delete", "identifier": "del-svc"}
-        )
+        resp = self._call_tool(client, "create_mcp_service", {"name": "To Delete", "identifier": "del-svc"})
         svc_id = json.loads(json.loads(resp.data)["result"]["content"][0]["text"])["mcp_service"]["id"]
 
         # delete
@@ -430,9 +428,5 @@ class TestAdminToolsDefinition:
             for prop_name, prop_def in props.items():
                 prop_desc = prop_def.get("description", "")
                 if prop_desc:
-                    has_japanese = any(
-                        "\u3000" <= ch <= "\u9fff" or "\uff00" <= ch <= "\uffef" for ch in prop_desc
-                    )
-                    assert not has_japanese, (
-                        f"'{tool['name']}.{prop_name}' の description に日本語: {prop_desc!r}"
-                    )
+                    has_japanese = any("\u3000" <= ch <= "\u9fff" or "\uff00" <= ch <= "\uffef" for ch in prop_desc)
+                    assert not has_japanese, f"'{tool['name']}.{prop_name}' の description に日本語: {prop_desc!r}"

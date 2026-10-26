@@ -10,6 +10,7 @@ import logging
 import uuid
 
 from flask import Blueprint, Response, current_app, jsonify, request
+from flask.typing import ResponseReturnValue
 
 from app.services import admin_mcp_tools
 from app.services.session_store import get_session_store
@@ -38,12 +39,13 @@ def _get_admin_api_key() -> str:
         if system_account and system_account.bearer_token:
             return system_account.bearer_token
     except Exception:
-        pass
+        # The key source silently switching would be hard to diagnose, so record why
+        logger.exception("Failed to load Admin MCP API key from the system account")
     # Fallback: env-based key (startup before first seed)
     return current_app.config.get("ADMIN_API_KEY", "")
 
 
-def _authenticate_admin() -> tuple[bool, Response | None]:
+def _authenticate_admin() -> tuple[bool, ResponseReturnValue | None]:
     """
     Authorization: Bearer <ACCELMCP_ADMIN_API_KEY> を検証する。
     成功時 (True, None)、失敗時 (False, Response) を返す。
@@ -157,7 +159,11 @@ ADMIN_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "limit": {"type": "integer", "description": "Number of records to fetch (max 200, default 50)", "default": 50},
+                "limit": {
+                    "type": "integer",
+                    "description": "Number of records to fetch (max 200, default 50)",
+                    "default": 50,
+                },
                 "offset": {"type": "integer", "description": "Offset (default 0)", "default": 0},
             },
         },
@@ -168,7 +174,11 @@ ADMIN_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "limit": {"type": "integer", "description": "Number of records to fetch (max 200, default 50)", "default": 50},
+                "limit": {
+                    "type": "integer",
+                    "description": "Number of records to fetch (max 200, default 50)",
+                    "default": 50,
+                },
                 "offset": {"type": "integer", "description": "Offset (default 0)", "default": 0},
             },
         },
@@ -184,7 +194,11 @@ ADMIN_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "limit": {"type": "integer", "description": "Number of records to fetch (max 200, default 50)", "default": 50},
+                "limit": {
+                    "type": "integer",
+                    "description": "Number of records to fetch (max 200, default 50)",
+                    "default": 50,
+                },
                 "offset": {"type": "integer", "description": "Offset (default 0)", "default": 0},
             },
         },
@@ -226,7 +240,11 @@ ADMIN_TOOLS = [
                 "name": {"type": "string", "description": "Variable name"},
                 "value": {"type": "string", "description": "Value"},
                 "description": {"type": "string", "description": "Description", "default": ""},
-                "is_secret": {"type": "boolean", "description": "Whether to treat as secret (default: true)", "default": True},
+                "is_secret": {
+                    "type": "boolean",
+                    "description": "Whether to treat as secret (default: true)",
+                    "default": True,
+                },
             },
             "required": ["name", "value"],
         },
@@ -274,9 +292,7 @@ def _dispatch_tool(name: str, arguments: dict) -> dict:
         return admin_mcp_tools.delete_mcp_service(mcp_service_id=int(arguments["mcp_service_id"]))
     elif name == "list_apps":
         mcp_service_id = arguments.get("mcp_service_id")
-        return admin_mcp_tools.list_apps(
-            mcp_service_id=int(mcp_service_id) if mcp_service_id is not None else None
-        )
+        return admin_mcp_tools.list_apps(mcp_service_id=int(mcp_service_id) if mcp_service_id is not None else None)
     elif name == "list_variables":
         return admin_mcp_tools.list_variables()
     elif name == "set_variable":
@@ -346,6 +362,9 @@ def _handle_request(mcp_request: dict) -> tuple[dict, str | None]:
 
         try:
             result = _dispatch_tool(tool_name, arguments)
+        except (KeyError, ValueError, TypeError) as e:
+            # Missing or wrongly typed arguments are the caller's fault, not a server error
+            return _make_error(req_id, -32602, f"Invalid params: {e}"), None
         except Exception as e:
             logger.exception(f"Admin MCP tool error: {tool_name}")
             return _make_error(req_id, -32603, f"Internal error: {str(e)}"), None
@@ -375,7 +394,7 @@ def _handle_request(mcp_request: dict) -> tuple[dict, str | None]:
 @admin_mcp_bp.route("/admin/mcp", methods=["POST", "GET", "DELETE"])
 def admin_mcp_endpoint():
     """Admin MCP エンドポイント。Bearer トークン認証必須。"""
-    logger.info(f"Admin MCP request: {request.method} {request.url}")
+    logger.info("Admin MCP request: %s %s", request.method, request.path)
 
     # --- 認証 ---
     ok, err_response = _authenticate_admin()
@@ -400,7 +419,9 @@ def admin_mcp_endpoint():
     # --- POST ---
     mcp_request = request.get_json(silent=True)
     if not mcp_request:
-        return jsonify(_make_error(0, -32700, "Parse error: Invalid JSON")), 400
+        return jsonify(_make_error(None, -32700, "Parse error: Invalid JSON")), 400
+    if not isinstance(mcp_request, dict):
+        return jsonify(_make_error(None, -32600, "Invalid Request: batch requests are not supported")), 400
 
     req_id = mcp_request.get("id")
     method = mcp_request.get("method", "")

@@ -80,7 +80,6 @@ class TestVariableNewPage:
         # Should redirect to list or detail page
         logged_in_page.wait_for_url(e2e_url("/variables*"))
 
-
     def test_create_secret_variable(self, logged_in_page: Page):
         """シークレット型Variableの作成"""
         logged_in_page.goto(e2e_url("/variables/new"))
@@ -90,7 +89,6 @@ class TestVariableNewPage:
 
         logged_in_page.click('button[type="submit"]')
         logged_in_page.wait_for_url(e2e_url("/variables*"))
-
 
     def test_create_env_variable(self, logged_in_page: Page):
         """環境変数参照型Variableの作成"""
@@ -189,7 +187,6 @@ class TestVariableEditPage:
             # Submit
             logged_in_page.click('button[type="submit"]')
             logged_in_page.wait_for_url(e2e_url("/variables*"))
-
 
     def test_delete_variable(self, logged_in_page: Page):
         """Variableの削除"""

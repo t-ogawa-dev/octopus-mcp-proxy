@@ -10,7 +10,7 @@ async function loadCapabilities() {
     if (isNaN(serviceId) || serviceId <= 0) {
         console.error('Invalid service ID:', serviceId, 'from URL:', window.location.pathname);
         const container = document.getElementById('capabilities-list');
-        container.innerHTML = `<div class="error-state">エラー: サービスIDが無効です（URL: ${window.location.pathname}）</div>`;
+        container.innerHTML = `<div class="error-state">エラー: サービスIDが無効です（URL: ${AppDom.escapeHtml(window.location.pathname)}）</div>`;
         return;
     }
     
@@ -44,25 +44,25 @@ async function loadCapabilities() {
         // Build full URL display: baseUrl + endpoint_path (only for tool types)
         let urlDisplay = '';
         if (cap.capability_type === 'tool' || cap.capability_type === 'mcp_tool') {
-            urlDisplay = cap.url || 'N/A';
+            urlDisplay = AppDom.escapeHtml(cap.url || 'N/A');
             if (baseUrl && cap.url && !cap.url.startsWith('http')) {
                 // If cap.url is a relative path, combine with baseUrl
                 const separator = baseUrl.endsWith('/') || cap.url.startsWith('/') ? '' : '/';
-                urlDisplay = `<span style="color: #666;">${baseUrl}</span>${separator}<span style="font-weight: 600;">${cap.url}</span>`;
+                urlDisplay = `<span style="color: #666;">${AppDom.escapeHtml(baseUrl)}</span>${separator}<span style="font-weight: 600;">${AppDom.escapeHtml(cap.url)}</span>`;
             }
         }
         
         return `
         <div class="list-item ${!cap.is_enabled ? 'disabled' : ''}">
             <div class="list-item-main">
-                <h3><a href="/capabilities/${cap.id}">${cap.name}</a></h3>
+                <h3><a href="/capabilities/${Number(cap.id)}">${AppDom.escapeHtml(cap.name)}</a></h3>
                 <div class="list-item-meta">
-                    <span class="badge badge-${cap.capability_type}">${cap.capability_type.toUpperCase()}</span>
+                    <span class="badge badge-${AppDom.escapeHtml(cap.capability_type)}">${AppDom.escapeHtml(cap.capability_type.toUpperCase())}</span>
                     ${!cap.is_enabled ? `<span class="status-badge disabled">${t('status_disabled')}</span>` : `<span class="status-badge enabled">${t('status_enabled')}</span>`}
                     ${(cap.access_control === 'restricted') ? `<span class="badge badge-access-restricted">${t('access_control_restricted')}</span>` : `<span class="badge badge-access-public">${t('access_control_public')}</span>`}
                     ${urlDisplay ? `<span class="text-muted" style="font-family: monospace; font-size: 0.9em;">${urlDisplay}</span>` : ''}
                 </div>
-                ${cap.description ? `<p class="text-muted">${cap.description}</p>` : ''}
+                ${cap.description ? `<p class="text-muted">${AppDom.escapeHtml(cap.description)}</p>` : ''}
             </div>
             <div class="list-item-actions">
                 <label class="toggle-switch">
@@ -78,7 +78,7 @@ async function loadCapabilities() {
     } catch (error) {
         console.error('Failed to load capabilities:', error);
         const container = document.getElementById('capabilities-list');
-        container.innerHTML = `<div class="error-state">エラー: ${error.message}</div>`;
+        container.innerHTML = `<div class="error-state">エラー: ${AppDom.escapeHtml(error.message)}</div>`;
     }
 }
 

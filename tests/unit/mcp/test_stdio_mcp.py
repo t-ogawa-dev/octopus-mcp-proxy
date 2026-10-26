@@ -4,6 +4,7 @@ Tests for stdio MCP connection, discovery, and variable replacement in args/env
 """
 
 import json
+import logging
 from unittest.mock import patch
 
 import pytest
@@ -160,6 +161,21 @@ class TestVariableReplacementInStdio:
 
 class TestStdioConnectionTestAPI:
     """Test the stdio connection test API endpoint"""
+
+    @patch("app.services.mcp_discovery.test_stdio_mcp_connection")
+    def test_test_stdio_connection_does_not_log_arguments_or_environment(self, mock_test, auth_client, caplog):
+        secret_value = "stdio-secret-marker"
+        mock_test.return_value = {"success": True, "tools": [], "server_info": {}}
+
+        with caplog.at_level(logging.INFO):
+            response = auth_client.post(
+                "/api/apps/test-stdio-connection",
+                json={"command": "mcp-client", "args": ["--token", secret_value], "env": {"API_KEY": secret_value}},
+                content_type="application/json",
+            )
+
+        assert response.status_code == 200
+        assert secret_value not in caplog.text
 
     def test_test_stdio_connection_missing_command(self, auth_client):
         """Test error when command is missing"""

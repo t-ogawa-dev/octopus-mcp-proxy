@@ -42,8 +42,10 @@ def upgrade():
         if idx_name:
             op.drop_index(idx_name, table_name='apps')
 
-    # Remove subdomain column from apps table
-    op.drop_column('apps', 'subdomain')
+    # Remove subdomain column from apps table. Batch mode lets SQLite rebuild the
+    # table, since its unnamed UNIQUE(subdomain) cannot be dropped by name above.
+    with op.batch_alter_table('apps', schema=None) as batch_op:
+        batch_op.drop_column('subdomain')
 
 
 def downgrade():

@@ -102,17 +102,20 @@ pytest
 
 ## Running Tests
 
-### Run all tests
+### Run unit / integration tests
 
 ```bash
 pytest
 ```
 
-Or:
+Or (with coverage, report written to `htmlcov/`):
 
 ```bash
 ./run_tests.sh
 ```
+
+Running `pytest` without arguments and `run_tests.sh` only run `tests/unit` and `tests/integration`.
+E2E tests need a running server and a browser, so run them separately as described below.
 
 ### Run tests in a specific file
 
@@ -194,8 +197,9 @@ End-to-end tests using a real browser (equivalent to Capybara).
 - `e2e/test_login.py` - Login/Logout
 - `e2e/test_dashboard.py` - Dashboard
 - `e2e/test_javascript_errors.py` - JavaScript error detection
-- `e2e/services/test_services.py` - Service management
+- `e2e/services/test_services.py` - App management (create, edit, connection test)
 - `e2e/capabilities/test_capabilities.py` - Capabilities management
+- `e2e/capabilities/test_capability_schema_roundtrip.py` - Schema stays identical between the new and edit pages
 - `e2e/accounts/test_accounts.py` - Account management
 - `e2e/mcp_services/test_mcp_services.py` - MCP service management
 - `e2e/mcp_templates/test_templates.py` - Template management
@@ -218,10 +222,11 @@ def test_login_with_valid_credentials(self, page: Page):
 **Running E2E tests:**
 
 ```bash
-# Start server (separate terminal)
-docker compose up
+# Recommended: run in Docker (image includes the browser)
+docker compose up -d
+docker compose --profile e2e run --rm e2e
 
-# Run all E2E tests
+# Running locally (server started and Playwright browsers installed)
 pytest tests/e2e/
 
 # Run tests for a specific page
@@ -229,8 +234,8 @@ pytest tests/e2e/test_login.py
 pytest tests/e2e/services/test_services.py
 pytest tests/e2e/mcp_templates/test_templates.py
 
-# Run by marker
-pytest -m e2e
+# Run by marker (a path is required)
+pytest tests/e2e/ -m e2e
 
 # Disable headless mode (show browser)
 pytest tests/e2e/ --headed

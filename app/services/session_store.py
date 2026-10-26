@@ -19,9 +19,14 @@ The backend is chosen by the ``REDIS_URL`` environment variable:
 Stores are namespaced (e.g. "mcp", "admin") so the two endpoints never collide.
 """
 
+import logging
 import os
 import threading
 import time
+
+from redis.exceptions import RedisError
+
+logger = logging.getLogger(__name__)
 
 # Default session lifetime in seconds (1 hour), matching the previous in-controller TTLs.
 DEFAULT_TTL_SECONDS = 3600
@@ -59,7 +64,12 @@ class InMemorySessionStore:
 
 
 class RedisSessionStore:
-    """Shared session store backed by Redis. TTL is handled by Redis key expiry."""
+    """Shared session store backed by Redis. TTL is handled by Redis key expiry.
+
+    Session IDs only route legacy Streamable HTTP clients; authentication is done
+    with bearer tokens. A Redis outage is therefore logged and treated as "session
+    valid" instead of failing every MCP request with a 500.
+    """
 
     def __init__(self, client, prefix: str):
         self._client = client
@@ -69,13 +79,23 @@ class RedisSessionStore:
         return f"{self._prefix}{session_id}"
 
     def register(self, session_id: str, ttl: int = DEFAULT_TTL_SECONDS) -> None:
-        self._client.setex(self._key(session_id), ttl, "1")
+        try:
+            self._client.setex(self._key(session_id), ttl, "1")
+        except RedisError:
+            logger.exception("Session store unavailable; session not registered")
 
     def is_valid(self, session_id: str) -> bool:
-        return bool(self._client.exists(self._key(session_id)))
+        try:
+            return bool(self._client.exists(self._key(session_id)))
+        except RedisError:
+            logger.exception("Session store unavailable; accepting session")
+            return True
 
     def remove(self, session_id: str) -> None:
-        self._client.delete(self._key(session_id))
+        try:
+            self._client.delete(self._key(session_id))
+        except RedisError:
+            logger.exception("Session store unavailable; session not removed")
 
 
 # Cache of stores per namespace so each controller reuses one instance.

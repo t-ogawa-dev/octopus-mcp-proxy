@@ -31,7 +31,9 @@ from app.models.models import (
     db,
     get_or_404,
 )
+from app.services.app_service import create_app_record, update_app_record
 from app.services.audit_logger import audit_log
+from app.services.connection_test import check_http_connection, check_stdio_connection
 
 # Service is now mapped to 'apps' table, but keep the class name for compatibility
 
@@ -241,215 +243,26 @@ def import_mcp_service():
 @login_required
 def test_service_connection():
     """Test MCP server connection"""
-    data = request.get_json()
+    data = request.get_json() or {}
     mcp_url = data.get("mcp_url")
-    common_headers = data.get("common_headers", {})
-
     if not mcp_url:
         return jsonify({"success": False, "error": "MCP URL is required"}), 400
 
-    try:
-        import requests
-        from requests.adapters import HTTPAdapter
-        from urllib3.util.retry import Retry
-
-        from app.services.variable_replacer import VariableReplacer
-
-        # Replace variables in headers if any
-        replacer = VariableReplacer()
-        resolved_headers = {}
-        unresolved_vars = []
-
-        for key, value in common_headers.items():
-            resolved_key = replacer.replace_in_string(key)
-            resolved_value = replacer.replace_in_string(value)
-            resolved_headers[resolved_key] = resolved_value
-
-            # Check if variables were not resolved
-            import re
-
-            if re.search(r"\{\{[A-Z0-9_]+\}\}", resolved_value):
-                # Extract variable names that were not resolved
-                for match in re.finditer(r"\{\{([A-Z0-9_]+)\}\}", resolved_value):
-                    unresolved_vars.append(match.group(1))
-
-        # If there are unresolved variables, return error
-        if unresolved_vars:
-            return jsonify(
-                {
-                    "success": False,
-                    "error": f"未定義の変数: {', '.join(set(unresolved_vars))}。Variables画面で登録してください。",
-                }
-            ), 400
-
-        # Log resolved headers for debugging
-        from flask import current_app
-
-        current_app.logger.info(f"Test connection to {mcp_url}")
-        current_app.logger.info(f"Resolved headers: {resolved_headers}")
-
-        # Setup session with timeout and retries
-        session = requests.Session()
-        retry = Retry(total=2, backoff_factor=0.1)
-        adapter = HTTPAdapter(max_retries=retry)
-        session.mount("http://", adapter)
-        session.mount("https://", adapter)
-
-        # Test connection with MCP protocol (JSON-RPC 2.0)
-        # First, try to initialize the session
-        test_headers = resolved_headers.copy()
-        test_headers["Content-Type"] = "application/json"
-
-        # Step 1: Initialize request
-        init_request = {
-            "jsonrpc": "2.0",
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "Octopus MCP Proxy", "version": "1.0.0"},
-            },
-            "id": 1,
-        }
-
-        response = session.post(mcp_url, json=init_request, headers=test_headers, timeout=10)
-
-        # Check Content-Type to determine if SSE
-        content_type = response.headers.get("Content-Type", "")
-        if "text/event-stream" in content_type:
-            # SSE server
-            return jsonify({"success": True, "message": "Connection successful (SSE)", "server_type": "sse"})
-
-        # Check if response is valid
-        if response.status_code == 200:
-            # Try to parse as JSON-RPC response
-            try:
-                # Check if response has content
-                if not response.text or response.text.strip() == "":
-                    return jsonify({"success": False, "error": "Server returned empty response"})
-
-                result = response.json()
-                if "result" in result:
-                    # Initialize successful
-                    server_info = result.get("result", {}).get("serverInfo", {})
-                    return jsonify({"success": True, "message": "Connection successful", "server_info": server_info})
-                elif "error" in result:
-                    error_msg = result["error"].get("message", "Unknown error")
-                    error_code = result["error"].get("code", "unknown")
-                    return jsonify({"success": False, "error": f"MCP Error ({error_code}): {error_msg}"})
-                else:
-                    return jsonify({"success": True, "message": "Connection successful (non-standard response)"})
-            except ValueError as e:
-                # Not JSON - log response content for debugging
-                from flask import current_app
-
-                content_preview = response.text[:200] if response.text else "(empty)"
-                current_app.logger.warning(f"Non-JSON response from {mcp_url}: {content_preview}")
-
-                content_type = response.headers.get("Content-Type", "")
-                return jsonify(
-                    {"success": False, "error": f"Invalid JSON response: {str(e)}. Content-Type: {content_type}"}
-                )
-        elif response.status_code == 405:
-            return jsonify(
-                {
-                    "success": False,
-                    "error": "Method Not Allowed (405). The endpoint may not support MCP protocol or requires different authentication.",
-                }
-            )
-        else:
-            return jsonify(
-                {
-                    "success": False,
-                    "error": f"Server returned status code {response.status_code}: {response.text[:200]}",
-                }
-            )
-
-    except requests.exceptions.Timeout:
-        return jsonify({"success": False, "error": "Connection timeout"}), 200
-    except requests.exceptions.ConnectionError:
-        return jsonify({"success": False, "error": "Cannot connect to server"}), 200
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 200
+    body, status = check_http_connection(mcp_url, data.get("common_headers") or {})
+    return jsonify(body), status
 
 
 @api_bp.route("/apps/test-stdio-connection", methods=["POST"])
 @login_required
 def test_stdio_connection():
     """Test stdio MCP server connection"""
-    data = request.get_json()
+    data = request.get_json() or {}
     command = data.get("command")
-    args = data.get("args", [])
-    env = data.get("env", {})
-    cwd = data.get("cwd")
-
     if not command:
         return jsonify({"success": False, "error": "Command is required"}), 400
 
-    try:
-        import re
-
-        from flask import current_app
-
-        from app.services.mcp_discovery import test_stdio_mcp_connection
-        from app.services.variable_replacer import VariableReplacer
-
-        replacer = VariableReplacer()
-        unresolved_vars = []
-
-        # Replace variables in args
-        resolved_args = []
-        for arg in args:
-            resolved_arg = replacer.replace_in_string(str(arg))
-            resolved_args.append(resolved_arg)
-
-            # Check if variables were not resolved
-            if re.search(r"\{\{[A-Z0-9_]+\}\}", resolved_arg):
-                for match in re.finditer(r"\{\{([A-Z0-9_]+)\}\}", resolved_arg):
-                    unresolved_vars.append(match.group(1))
-
-        # Replace variables in env
-        resolved_env = {}
-        for key, value in env.items():
-            resolved_value = replacer.replace_in_string(value)
-            resolved_env[key] = resolved_value
-
-            # Check if variables were not resolved
-            if re.search(r"\{\{[A-Z0-9_]+\}\}", resolved_value):
-                for match in re.finditer(r"\{\{([A-Z0-9_]+)\}\}", resolved_value):
-                    unresolved_vars.append(match.group(1))
-
-        # If there are unresolved variables, return error
-        if unresolved_vars:
-            return jsonify(
-                {
-                    "success": False,
-                    "error": f"未定義の変数: {', '.join(set(unresolved_vars))}。Variables画面で登録してください。",
-                }
-            ), 400
-
-        current_app.logger.info(f"Test stdio connection: {command} {resolved_args}")
-
-        # Test the connection
-        result = test_stdio_mcp_connection(command, resolved_args, resolved_env, cwd)
-
-        if result.get("success"):
-            return jsonify(
-                {
-                    "success": True,
-                    "message": "Connection successful",
-                    "tools": result.get("tools", []),
-                    "server_info": result.get("server_info", {}),
-                }
-            )
-        else:
-            return jsonify({"success": False, "error": result.get("error", "Unknown error")})
-
-    except Exception as e:
-        from flask import current_app
-
-        current_app.logger.error(f"Stdio connection test failed: {e}")
-        return jsonify({"success": False, "error": str(e)}), 200
+    body, status = check_stdio_connection(command, data.get("args") or [], data.get("env") or {}, data.get("cwd"))
+    return jsonify(body), status
 
 
 @api_bp.route("/mcp-services/<int:mcp_service_id>/apps", methods=["GET", "POST"])
@@ -463,50 +276,7 @@ def mcp_service_apps(mcp_service_id):
         return jsonify([app.to_dict() for app in mcp_service.apps])
 
     elif request.method == "POST":
-        data = request.get_json()
-        service = Service(
-            mcp_service_id=mcp_service_id,
-            name=data["name"],
-            service_type=data.get("service_type", "api"),
-            mcp_url=data.get("mcp_url"),
-            mcp_transport=data.get("mcp_transport", "http"),
-            stdio_command=data.get("stdio_command"),
-            stdio_args=json.dumps(data.get("stdio_args", [])) if data.get("stdio_args") else None,
-            stdio_env=json.dumps(data.get("stdio_env", {})) if data.get("stdio_env") else None,
-            stdio_cwd=data.get("stdio_cwd"),
-            common_headers=json.dumps(data.get("common_headers", {})),
-            description=data.get("description", ""),
-        )
-        db.session.add(service)
-        db.session.commit()
-
-        # MCPタイプの場合、自動でCapabilityを検出
-        if service.service_type == "mcp":
-            from flask import current_app
-
-            from app.services.mcp_discovery import discover_mcp_capabilities, discover_stdio_mcp_capabilities
-
-            try:
-                current_app.logger.info(f"Starting MCP capability discovery for service {service.id}")
-                if service.mcp_transport == "stdio" and service.stdio_command:
-                    # stdio transport
-                    tool_count = discover_stdio_mcp_capabilities(
-                        service.id,
-                        service.stdio_command,
-                        json.loads(service.stdio_args) if service.stdio_args else [],
-                        json.loads(service.stdio_env) if service.stdio_env else {},
-                        service.stdio_cwd,
-                    )
-                elif service.mcp_url:
-                    # HTTP transport
-                    tool_count = discover_mcp_capabilities(service.id, service.mcp_url)
-                else:
-                    tool_count = 0
-                current_app.logger.info(f"Successfully discovered {tool_count} MCP tools")
-            except Exception as e:
-                current_app.logger.error(f"MCP capability discovery failed: {e}")
-                # Capability検出失敗してもサービス登録は成功させる
-
+        service = create_app_record(request.get_json(), mcp_service_id)
         return jsonify(service.to_dict()), 201
 
 
@@ -520,51 +290,9 @@ def apps():
         return jsonify([s.to_dict() for s in services])
 
     elif request.method == "POST":
+        # If mcp_service_id is omitted, create standalone (for backward compatibility)
         data = request.get_json()
-        # If mcp_service_id is provided, use it; otherwise create standalone (for backward compatibility)
-        service = Service(
-            mcp_service_id=data.get("mcp_service_id"),
-            name=data["name"],
-            service_type=data.get("service_type", "api"),
-            mcp_url=data.get("mcp_url"),
-            mcp_transport=data.get("mcp_transport", "http"),
-            stdio_command=data.get("stdio_command"),
-            stdio_args=json.dumps(data.get("stdio_args", [])) if data.get("stdio_args") else None,
-            stdio_env=json.dumps(data.get("stdio_env", {})) if data.get("stdio_env") else None,
-            stdio_cwd=data.get("stdio_cwd"),
-            common_headers=json.dumps(data.get("common_headers", {})),
-            description=data.get("description", ""),
-        )
-        db.session.add(service)
-        db.session.commit()
-
-        # MCPタイプの場合、自動でCapabilityを検出
-        if service.service_type == "mcp":
-            from flask import current_app
-
-            from app.services.mcp_discovery import discover_mcp_capabilities, discover_stdio_mcp_capabilities
-
-            try:
-                current_app.logger.info(f"Starting MCP capability discovery for service {service.id}")
-                if service.mcp_transport == "stdio" and service.stdio_command:
-                    # stdio transport
-                    tool_count = discover_stdio_mcp_capabilities(
-                        service.id,
-                        service.stdio_command,
-                        json.loads(service.stdio_args) if service.stdio_args else [],
-                        json.loads(service.stdio_env) if service.stdio_env else {},
-                        service.stdio_cwd,
-                    )
-                elif service.mcp_url:
-                    # HTTP transport
-                    tool_count = discover_mcp_capabilities(service.id, service.mcp_url)
-                else:
-                    tool_count = 0
-                current_app.logger.info(f"Successfully discovered {tool_count} MCP tools")
-            except Exception as e:
-                current_app.logger.error(f"MCP capability discovery failed: {e}")
-                # Capability検出失敗してもサービス登録は成功させる
-
+        service = create_app_record(data, data.get("mcp_service_id"))
         return jsonify(service.to_dict()), 201
 
 
@@ -579,23 +307,7 @@ def app_detail(service_id):
         return jsonify(service.to_dict())
 
     elif request.method == "PUT":
-        data = request.get_json()
-        service.name = data.get("name", service.name)
-        service.service_type = data.get("service_type", service.service_type)
-        service.mcp_url = data.get("mcp_url", service.mcp_url)
-        service.common_headers = json.dumps(data.get("common_headers", {}))
-        service.description = data.get("description", service.description)
-        db.session.commit()
-
-        # MCPタイプに変更された場合、自動でCapabilityを検出
-        if service.service_type == "mcp" and service.mcp_url:
-            from app.services.mcp_discovery import discover_mcp_capabilities
-
-            try:
-                discover_mcp_capabilities(service.id, service.mcp_url)
-            except Exception as e:
-                print(f"MCP capability discovery failed: {e}")
-
+        update_app_record(service, request.get_json())
         return jsonify(service.to_dict())
 
     elif request.method == "DELETE":
@@ -1123,7 +835,8 @@ def template_detail(template_id):
         template.mcp_url = data.get("mcp_url", template.mcp_url)
         template.official_url = data.get("official_url", template.official_url)
         template.description = data.get("description", template.description)
-        template.common_headers = json.dumps(data.get("common_headers", {}))
+        if "common_headers" in data:
+            template.common_headers = json.dumps(data["common_headers"] or {})
         template.icon = data.get("icon", template.icon)
         template.category = data.get("category", template.category)
         db.session.commit()
@@ -2198,14 +1911,14 @@ def resources():
         )
 
         db.session.add(resource)
-        db.session.commit()
+        db.session.flush()  # Assign resource.id without committing, so a failure below leaves nothing behind
 
         # Add account permissions if restricted
         if resource.access_control == "restricted" and "account_ids" in data:
             for account_id in data["account_ids"]:
                 access = ResourceAccountAccess(resource_id=resource.id, account_id=account_id)
                 db.session.add(access)
-            db.session.commit()
+        db.session.commit()
 
         return jsonify(resource.to_dict()), 201
 
@@ -2456,10 +2169,12 @@ def get_system_account():
     system_account = ConnectionAccount.query.filter_by(is_system=True).first()
     if system_account is None:
         return jsonify({"error": "システムアカウントが見つかりません"}), 404
-    return jsonify({
-        "id": system_account.id,
-        "bearer_token": system_account.bearer_token,
-    })
+    return jsonify(
+        {
+            "id": system_account.id,
+            "bearer_token": system_account.bearer_token,
+        }
+    )
 
 
 @api_bp.route("/admin/system-account/regenerate", methods=["POST"])
@@ -2472,4 +2187,3 @@ def regenerate_system_account_token():
     system_account.bearer_token = secrets.token_urlsafe(32)
     db.session.commit()
     return jsonify({"success": True, "bearer_token": system_account.bearer_token})
-

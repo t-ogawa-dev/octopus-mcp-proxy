@@ -5,14 +5,17 @@ MCP Server Application Factory
 import logging
 import os
 
-from flask import Flask
+from flask import Flask, request
 from flask_cors import CORS
 
 # Application version
 __version__ = "1.0.0"
 
 # Import extensions
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from flask_migrate import Migrate
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from app.config.config import Config
 from app.models.models import db
@@ -40,12 +43,27 @@ def setup_logging(app):
     app.logger.info(f"Logging configured with level: {log_level}")
 
 
+# Built-in default and the .env.example placeholder
+_KNOWN_SECRET_KEYS = frozenset({"dev-secret-key-change-in-production", "your-secret-key-change-in-production"})
+
+
+def _validate_production_config(app):
+    """Refuse to start in production with secrets that are publicly known."""
+    if os.getenv("FLASK_ENV") != "production" or app.config.get("TESTING"):
+        return
+    if not app.config.get("SECRET_KEY") or app.config["SECRET_KEY"] in _KNOWN_SECRET_KEYS:
+        raise RuntimeError("SECRET_KEY must be set to a random value when FLASK_ENV=production")
+    if os.getenv("ADMIN_PASSWORD", "admin") in ("admin", "admin123"):
+        app.logger.warning("ADMIN_PASSWORD is a default value; the initial admin account is guessable until changed")
+
+
 def create_app(config_class=Config):
     """Application factory pattern"""
     app = Flask(__name__, template_folder="views/templates", static_folder="assets")
 
     # Load configuration
     app.config.from_object(config_class)
+    _validate_production_config(app)
 
     # Setup logging
     setup_logging(app)
@@ -57,10 +75,16 @@ def create_app(config_class=Config):
 
     app.logger.debug(f"Admin username: {app.config['ADMIN_USERNAME']}")
 
+    if app.config.get("TRUSTED_PROXY_COUNT"):
+        n = app.config["TRUSTED_PROXY_COUNT"]
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=n, x_proto=n, x_host=n)  # type: ignore[method-assign]
+
     # Initialize extensions
     db.init_app(app)
     Migrate(app, db, directory="db/migrations")
-    CORS(app)
+    # Only the MCP endpoints are meant to be called from other origins (bearer-token auth);
+    # the admin UI and REST API rely on session cookies and stay same-origin.
+    CORS(app, resources={r"^/mcp$": {}, r"^/admin/mcp$": {}, r"^/[^/]+/mcp/?$": {}})
 
     app.logger.info("Database and extensions initialized")
 
@@ -79,8 +103,23 @@ def create_app(config_class=Config):
 
     app.logger.info("All blueprints registered")
 
+    # MCP endpoints accept unauthenticated traffic for public services, so they are rate limited per IP
+    limiter = Limiter(get_remote_address, app=app, storage_uri=app.config["RATELIMIT_STORAGE_URI"])
+    mcp_limit = limiter.limit(lambda: app.config["MCP_RATE_LIMIT"])
+    mcp_limit(mcp_bp)
+    mcp_limit(admin_mcp_bp)
+
+    from app.controllers.auth_controller import reject_cross_origin_request
+
+    @app.before_request
+    def csrf_protect():
+        # MCP blueprints authenticate with bearer tokens, not cookies, so CSRF does not apply
+        if request.blueprint in ("auth", "admin", "api"):
+            return reject_cross_origin_request()
+        return None
+
     # Global error handlers for all routes
-    from flask import jsonify, request
+    from flask import jsonify
     from werkzeug.exceptions import NotFound
 
     @app.errorhandler(404)
@@ -95,10 +134,16 @@ def create_app(config_class=Config):
     def handle_global_500(e):
         """Handle 500 errors globally - return JSON for API routes, HTML for others"""
         if request.path.startswith("/api/"):
-            app.logger.error(f"Internal server error on {request.path}: {str(e)}")
-            return jsonify({"error": "Internal server error", "message": str(e)}), 500
+            app.logger.error("Internal server error on %s: %s", request.path, e)
+            # Exception text can contain SQL, paths or secrets, so it is only logged
+            return jsonify({"error": "Internal server error"}), 500
         # For non-API routes, use default HTML error page
         return e
+
+    @app.errorhandler(429)
+    def handle_rate_limited(e):
+        """Rate-limit responses are JSON so MCP clients can parse them"""
+        return jsonify({"error": "Too many requests", "message": str(e.description)}), 429
 
     # Health check endpoint
     @app.route("/health")

@@ -3,9 +3,84 @@ Tests for Security features (brute-force protection, audit logs)
 """
 
 import json
+import logging
 from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock, patch
 
+from app.controllers.mcp_controller import authenticate_bearer_token
 from app.models.models import AdminActionLog, AdminLoginLog, AdminSettings, LoginLockStatus
+
+
+def test_invalid_bearer_token_is_not_written_to_logs(client, caplog):
+    secret_value = "bearer-secret-marker"
+
+    with (
+        client.application.test_request_context(headers={"Authorization": f"Bearer {secret_value}"}),
+        caplog.at_level(logging.WARNING, logger="app.controllers.mcp_controller"),
+    ):
+        account, error, status_code = authenticate_bearer_token()
+
+    assert account is None
+    assert error == {"error": "Invalid bearer token"}
+    assert status_code == 401
+    assert secret_value[:10] not in caplog.text
+
+
+@patch("requests.Session.post")
+def test_mcp_connection_test_does_not_log_url_or_headers(mock_post, auth_client, caplog):
+    url_secret = "url-secret-marker"
+    header_secret = "header-secret-marker"
+    response = MagicMock()
+    response.status_code = 200
+    response.headers = {"Content-Type": "application/json"}
+    response.text = '{"result": {"serverInfo": {"name": "test"}}}'
+    response.json.return_value = {"result": {"serverInfo": {"name": "test"}}}
+    mock_post.return_value = response
+
+    with caplog.at_level(logging.INFO):
+        result = auth_client.post(
+            "/api/apps/test-connection",
+            json={
+                "mcp_url": f"https://upstream.example.com/mcp?token={url_secret}",
+                "common_headers": {"Authorization": f"Bearer {header_secret}"},
+            },
+        )
+
+    assert result.status_code == 200
+    assert url_secret not in caplog.text
+    assert header_secret not in caplog.text
+
+
+def test_mcp_connection_log_masks_sensitive_json_fields():
+    from app.services.mcp_logger import mask_sensitive_data
+
+    body = json.dumps(
+        {
+            "authorization": "Bearer header-secret-marker",
+            "nested": {"refresh_token": "refresh-secret-marker", "api_key": "api-secret-marker"},
+            "message": "Bearer inline-secret-marker",
+        }
+    )
+
+    masked = json.loads(mask_sensitive_data(body, {}))
+
+    assert masked["authorization"] == "[MASKED]"
+    assert masked["nested"]["refresh_token"] == "[MASKED]"
+    assert masked["nested"]["api_key"] == "[MASKED]"
+    assert masked["message"] == "Bearer [MASKED]"
+
+
+def test_mcp_connection_log_keeps_non_secret_token_counts():
+    from app.services.mcp_logger import mask_sensitive_data
+
+    body = json.dumps({"max_tokens": 1024, "usage": {"input_tokens": 12}, "tokenizer": "cl100k", "token": "t-1"})
+
+    masked = json.loads(mask_sensitive_data(body, {}))
+
+    assert masked["max_tokens"] == 1024
+    assert masked["usage"]["input_tokens"] == 12
+    assert masked["tokenizer"] == "cl100k"
+    assert masked["token"] == "[MASKED]"
 
 
 class TestBruteForceProtection:
@@ -333,3 +408,143 @@ class TestSecurityAPIEndpoints:
         # Find our locked IP
         locked_ips = [ip for ip in data["locked_ips"] if ip["ip_address"] == "10.0.0.1"]
         assert len(locked_ips) >= 1
+
+
+class TestCsrfOriginCheck:
+    def test_cross_origin_api_write_is_rejected(self, auth_client):
+        resp = auth_client.post("/api/mcp-services", json={"name": "x"}, headers={"Origin": "https://evil.example"})
+
+        assert resp.status_code == 403
+
+    def test_sibling_subdomain_origin_is_rejected(self, auth_client):
+        resp = auth_client.post(
+            "/api/mcp-services",
+            json={"name": "x"},
+            headers={"Origin": "http://attacker.lvh.me"},
+            base_url="http://lvh.me",
+        )
+
+        assert resp.status_code == 403
+
+    def test_opaque_origin_is_rejected(self, auth_client):
+        resp = auth_client.delete("/api/mcp-services/1", headers={"Origin": "null"})
+
+        assert resp.status_code == 403
+
+    def test_cross_site_referer_is_rejected_when_origin_missing(self, auth_client):
+        resp = auth_client.post(
+            "/login", json={"username": "admin", "password": "x"}, headers={"Referer": "https://evil.example/page"}
+        )
+
+        assert resp.status_code == 403
+
+    def test_same_origin_write_is_allowed(self, auth_client):
+        resp = auth_client.post(
+            "/api/mcp-services",
+            json={"name": "Same Origin", "identifier": "same-origin"},
+            headers={"Origin": "http://localhost"},
+        )
+
+        assert resp.status_code == 201
+
+    def test_mcp_endpoint_is_not_subject_to_origin_check(self, client, db):
+        resp = client.post(
+            "/mcp?subdomain=none",
+            json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+            headers={"Origin": "https://some-mcp-client.example"},
+        )
+
+        assert resp.status_code == 404
+
+
+def test_api_500_does_not_expose_exception_text(auth_client):
+    with patch("app.controllers.api_controller.McpService.query") as mock_query:
+        mock_query.all.side_effect = RuntimeError("password=hunter2 in connection string")
+        auth_client.application.config["PROPAGATE_EXCEPTIONS"] = False
+        try:
+            resp = auth_client.get("/api/mcp-services")
+        finally:
+            auth_client.application.config["PROPAGATE_EXCEPTIONS"] = None
+
+    assert resp.status_code == 500
+    assert "hunter2" not in resp.get_data(as_text=True)
+
+
+class TestRequestLimits:
+    def test_oversized_body_is_rejected(self, app, client):
+        original = app.config["MAX_CONTENT_LENGTH"]
+        app.config["MAX_CONTENT_LENGTH"] = 1024
+        try:
+            resp = client.post("/mcp?subdomain=x", data="x" * 2048, headers={"Content-Type": "application/json"})
+        finally:
+            app.config["MAX_CONTENT_LENGTH"] = original
+
+        assert resp.status_code == 413
+
+    def test_mcp_endpoint_is_rate_limited_per_ip(self, db):
+        from app import create_app
+        from tests.conftest import TestConfig
+
+        class LimitedConfig(TestConfig):
+            RATELIMIT_ENABLED = True
+            RATELIMIT_STORAGE_URI = "memory://"
+            MCP_RATE_LIMIT = "2 per minute"
+
+        from app.models.models import db as _db
+
+        limited_app = create_app(LimitedConfig)
+        with limited_app.app_context():
+            _db.create_all()
+        limited_client = limited_app.test_client()
+        statuses = [limited_client.get("/mcp?subdomain=none").status_code for _ in range(3)]
+        other_ip = limited_client.get("/mcp?subdomain=none", environ_base={"REMOTE_ADDR": "10.9.9.9"})
+
+        assert statuses == [404, 404, 429]
+        assert other_ip.status_code == 404
+
+    def test_admin_ui_is_not_rate_limited(self, db):
+        from app import create_app
+        from tests.conftest import TestConfig
+
+        class LimitedConfig(TestConfig):
+            RATELIMIT_ENABLED = True
+            RATELIMIT_STORAGE_URI = "memory://"
+            MCP_RATE_LIMIT = "1 per minute"
+
+        limited_client = create_app(LimitedConfig).test_client()
+        statuses = {limited_client.get("/login").status_code for _ in range(3)}
+
+        assert statuses == {200}
+
+
+class TestClientIpResolution:
+    def test_forwarded_for_is_ignored_without_trusted_proxy(self, app):
+        from app.controllers.auth_controller import _get_client_ip
+
+        with app.test_request_context(
+            "/", headers={"X-Forwarded-For": "6.6.6.6"}, environ_base={"REMOTE_ADDR": "1.1.1.1"}
+        ):
+            assert _get_client_ip() == "1.1.1.1"
+
+    def test_forwarded_for_from_trusted_proxy_is_used(self, db):
+        from flask import request
+
+        from app import create_app
+        from tests.conftest import TestConfig
+
+        class ProxiedConfig(TestConfig):
+            TRUSTED_PROXY_COUNT = 1
+
+        proxied = create_app(ProxiedConfig)
+        seen = {}
+
+        @proxied.route("/_ip_probe")
+        def _ip_probe():
+            seen["ip"] = request.remote_addr
+            return ""
+
+        proxied.test_client().get(
+            "/_ip_probe", headers={"X-Forwarded-For": "spoofed, 203.0.113.7"}, environ_base={"REMOTE_ADDR": "10.0.0.2"}
+        )
+
+        assert seen["ip"] == "203.0.113.7"

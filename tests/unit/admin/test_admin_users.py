@@ -127,9 +127,7 @@ class TestPerUserForcedCredentialChange:
         resp = client.get("/dashboard")
         assert resp.status_code == 200
 
-    def test_one_pending_admin_does_not_block_other_initialized_admin(
-        self, app, db, admin_initialized, admin_pending
-    ):
+    def test_one_pending_admin_does_not_block_other_initialized_admin(self, app, db, admin_initialized, admin_pending):
         """Regression check: the forced-change flag must be evaluated per logged-in user,
         not against an arbitrary AdminCredentials row in the table."""
         pending_client = app.test_client()
@@ -213,9 +211,7 @@ class TestAdminUsersListAndCreate:
         assert usernames == {"alice", "bootstrap_admin"}
 
     def test_create_admin_user(self, auth_client, db):
-        resp = auth_client.post(
-            "/api/admin-users", json={"username": "new_admin", "password": "new-admin-pass-1"}
-        )
+        resp = auth_client.post("/api/admin-users", json={"username": "new_admin", "password": "new-admin-pass-1"})
         assert resp.status_code == 201
         data = resp.get_json()
         assert data["username"] == "new_admin"
@@ -260,15 +256,11 @@ class TestAdminUserDetailUpdateDelete:
         assert resp.get_json()["username"] == "alice2"
 
     def test_update_rejects_duplicate_username(self, auth_client, db, admin_initialized, admin_pending):
-        resp = auth_client.put(
-            f"/api/admin-users/{admin_pending.id}", json={"username": "alice"}
-        )
+        resp = auth_client.put(f"/api/admin-users/{admin_pending.id}", json={"username": "alice"})
         assert resp.status_code == 409
 
     def test_update_password(self, auth_client, db, admin_initialized):
-        resp = auth_client.put(
-            f"/api/admin-users/{admin_initialized.id}", json={"password": "updated-pass-1"}
-        )
+        resp = auth_client.put(f"/api/admin-users/{admin_initialized.id}", json={"password": "updated-pass-1"})
         assert resp.status_code == 200
 
         db.session.refresh(admin_initialized)
@@ -301,9 +293,7 @@ class TestAdminUserDetailUpdateDelete:
         assert resp.status_code == 204
         assert AdminCredentials.query.count() == 1
 
-    def test_renaming_own_account_via_management_api_syncs_session(
-        self, client, db, admin_initialized, admin_pending
-    ):
+    def test_renaming_own_account_via_management_api_syncs_session(self, client, db, admin_initialized, admin_pending):
         _login(client, "alice", "alice-password-1")
         resp = client.put(f"/api/admin-users/{admin_initialized.id}", json={"username": "alice_v2"})
         assert resp.status_code == 200
@@ -312,9 +302,7 @@ class TestAdminUserDetailUpdateDelete:
         resp2 = client.get("/dashboard")
         assert resp2.status_code == 200
 
-    def test_renaming_another_account_does_not_affect_own_session(
-        self, client, db, admin_initialized, admin_pending
-    ):
+    def test_renaming_another_account_does_not_affect_own_session(self, client, db, admin_initialized, admin_pending):
         _login(client, "alice", "alice-password-1")
         client.put(f"/api/admin-users/{admin_pending.id}", json={"username": "bootstrap_admin_v2"})
 

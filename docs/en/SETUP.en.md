@@ -130,8 +130,8 @@ curl -k -H "Authorization: Bearer YOUR_TOKEN" \
 curl -k -X POST \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"arguments": {"param": "value"}}' \
-  https://myservice.lvh.me/tools/get_weather
+  -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "get_weather", "arguments": {"param": "value"}}}' \
+  https://myservice.lvh.me/mcp
 ```
 
 #### Using Query Parameters
@@ -364,6 +364,6 @@ python run.py
 
 ### MCP API
 
-- `POST /mcp/{subdomain}` - MCP request processing
+- `POST /mcp` (with subdomain) / `POST /{identifier}/mcp` - MCP request processing
   - Authorization: Bearer {token}
   - Content-Type: application/json

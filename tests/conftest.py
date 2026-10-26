@@ -20,6 +20,7 @@ class TestConfig(Config):
     SECRET_KEY = "test-secret-key"
     ADMIN_USERNAME = "admin"
     ADMIN_PASSWORD = "admin"
+    RATELIMIT_ENABLED = False
 
 
 @pytest.fixture(scope="session")
